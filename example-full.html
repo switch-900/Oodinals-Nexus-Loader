@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nexus Inscriber - Full Loader Demo</title>
+  <style>
+    :root {
+      --bg1: #667eea;
+      --bg2: #764ba2;
+      --card: #ffffff;
+      --text: #222;
+      --muted: #666;
+      --border: #e6e6e6;
+      --primary: #667eea;
+      --primary2: #5568d3;
+      --danger: #f44336;
+      --success: #4caf50;
+      --warn: #f59e0b;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 28px 18px;
+      background: linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 100%);
+      color: var(--text);
+    }
+
+    .container {
+      max-width: 1040px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 14px;
+      padding: 22px;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.18);
+    }
+
+    h1 {
+      margin: 0 0 8px 0;
+      color: var(--primary);
+      font-size: 26px;
+    }
+
+    .sub {
+      margin: 0 0 18px 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .spacer { height: 14px; }
+
+    button {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 10px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    button:hover { background: var(--primary2); }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+
+    .btn-secondary {
+      background: #eee;
+      color: #222;
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { background: #e6e6e6; }
+
+    .btn-danger { background: var(--danger); }
+    .btn-danger:hover { background: #d93b30; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #f6f6f6;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: #333;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      background: #fff;
+    }
+
+    .panel h3 {
+      margin: 0 0 8px 0;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #444;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+      margin: 6px 0 0 0;
+    }
+
+    input, select {
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 13px;
+      min-width: 160px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 340px;
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      resize: vertical;
+    }
+
+    pre {
+      margin: 0;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fbfbfb;
+      overflow: auto;
+      font-size: 12px;
+      font-family: var(--mono);
+      max-height: 360px;
+    }
+
+    .status {
+      margin-top: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #f5f8ff;
+      padding: 12px;
+      display: none;
+    }
+
+    .status.show { display: block; }
+    .status.success { background: #f0fff4; border-color: #d7f5df; }
+    .status.error { background: #fff0f0; border-color: #ffd6d6; }
+    .status.warn { background: #fff8e6; border-color: #ffe5b3; }
+
+    .mono { font-family: var(--mono); }
+
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 18px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>Nexus Inscriber — Full Loader Demo</h1>
+      <p class="sub">
+        This page exercises every method exposed by the Nexus Loader: wallet connect/disconnect, JSON validation,
+        fee-rate helpers, UTXO helpers, inscriptions fetch, fee estimation, and inscription creation.
+      </p>
+
+      <div class="row" style="justify-content:space-between; gap:12px;">
+        <div class="row">
+          <button id="connectBtn" disabled>Connect Wallet</button>
+          <button id="disconnectBtn" class="btn-danger" style="display:none">Disconnect</button>
+          <span id="loaderPill" class="pill">Loading Nexus…</span>
+        </div>
+        <div class="row">
+          <span class="pill">Loader sat (latest): <span class="mono">534764996708771</span></span>
+        </div>
+      </div>
+
+      <div id="walletInfo" class="panel" style="margin-top:14px; display:none">
+        <h3>Wallet State</h3>
+        <div class="row">
+          <span class="pill"><strong>Wallet</strong>: <span id="walletType">—</span></span>
+          <span class="pill"><strong>Payment</strong>: <span id="paymentAddress">—</span></span>
+          <span class="pill"><strong>Ordinals</strong>: <span id="ordinalsAddress">—</span></span>
+        </div>
+        <p class="hint">Uses <span class="mono">Nexus.getWalletState()</span>.</p>
+      </div>
+
+      <div id="status" class="status"></div>
+
+      <hr class="divider" />
+
+      <div class="grid">
+        <div class="panel">
+          <h3>Loader Utilities</h3>
+
+          <div class="row" style="margin-bottom:10px">
+            <button id="btnInstalled" class="btn-secondary" disabled>Get Installed Wallets</button>
+            <button id="btnFeeRates" class="btn-secondary" disabled>Get Fee Rates</button>
+          </div>
+
+          <div class="row" style="margin-bottom:10px">
+            <label class="pill" style="gap:10px">
+              Fee Priority
+              <select id="feePriority">
+                <option value="fast">fast</option>
+                <option value="medium" selected>medium</option>
+                <option value="slow">slow</option>
+                <option value="minimum">minimum</option>
+              </select>
+            </label>
+            <button id="btnFeeRate" class="btn-secondary" disabled>Get Fee Rate</button>
+            <button id="btnApplyFeeRate" class="btn-secondary" disabled>Apply Fee Rate to JSON</button>
+          </div>
+
+          <div class="row" style="margin-bottom:10px">
+            <label class="pill" style="gap:10px; flex:1">
+              Address (optional)
+              <input id="addressInput" placeholder="bc1... (leave blank to use connected wallet)" style="min-width:260px; width:100%" />
+            </label>
+          </div>
+
+          <div class="row" style="margin-bottom:10px">
+            <button id="btnFetchUtxos" class="btn-secondary" disabled>fetchUtxos()</button>
+            <button id="btnFetchSpendable" class="btn-secondary" disabled>fetchSpendableUtxos()</button>
+            <button id="btnGetSpendable" class="btn-secondary" disabled>getSpendableUtxos()</button>
+          </div>
+
+          <div class="row" style="margin-bottom:10px">
+            <button id="btnFetchInscriptions" class="btn-secondary" disabled>fetchInscriptions()</button>
+            <label class="pill" style="gap:10px">
+              Spendable progress
+              <select id="spendableProgress">
+                <option value="off" selected>off</option>
+                <option value="on">on</option>
+              </select>
+            </label>
+          </div>
+
+          <p class="hint">
+            These buttons call: <span class="mono">getInstalledWallets</span>, <span class="mono">getFeeRates</span>,
+            <span class="mono">getFeeRate</span>, <span class="mono">fetchUtxos</span>,
+            <span class="mono">fetchSpendableUtxos</span>, <span class="mono">getSpendableUtxos</span>,
+            <span class="mono">fetchInscriptions</span>.
+          </p>
+        </div>
+
+        <div class="panel">
+          <h3>JSON + Inscription Flow</h3>
+
+          <div class="row" style="margin-bottom:10px">
+            <button id="tplBasic" class="btn-secondary">Load Basic Template</button>
+            <button id="tplAdvanced" class="btn-secondary">Load Advanced Template</button>
+            <button id="tplBatch" class="btn-secondary">Load Batch + Binary Template</button>
+          </div>
+
+          <div class="row" style="margin-bottom:10px">
+            <button id="btnValidate" class="btn-secondary" disabled>validateJson()</button>
+            <button id="btnEstimate" disabled>Estimate Fees</button>
+            <button id="btnCreate" disabled>Create Inscription</button>
+          </div>
+
+          <p class="hint">
+            Notes: platform fee is applied inside Nexus Core; dev + custom fees come from JSON (<span class="mono">fees.developer</span>, <span class="mono">fees.customFees</span>).
+          </p>
+        </div>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="panel">
+        <h3>JSON Config</h3>
+        <textarea id="jsonConfig"></textarea>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="grid">
+        <div class="panel">
+          <h3>Result</h3>
+          <pre id="resultOut">(no result yet)</pre>
+        </div>
+        <div class="panel">
+          <h3>Debug / Data</h3>
+          <pre id="debugOut">(no debug yet)</pre>
+        </div>
+      </div>
+
+      <!-- Wallet Picker Modal (simple, no dependencies) -->
+      <div id="walletModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);align-items:center;justify-content:center;z-index:99999">
+        <div style="width:min(560px,92vw);background:#fff;border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,.35);padding:18px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div style="font-size:16px;font-weight:800;color:#222">Select Wallet</div>
+            <button id="walletModalClose" class="btn-secondary" style="padding:8px 10px">✕</button>
+          </div>
+          <div id="walletModalHint" style="font-size:12px;color:#666;margin-bottom:10px"></div>
+          <div id="walletList" style="display:grid;grid-template-columns:1fr 1fr;gap:10px"></div>
+          <p class="hint" style="margin-top:10px">
+            No auto-connect. Click a wallet to connect.
+          </p>
+        </div>
+      </div>
+
+      <script type="module">
+        // ============================================================================
+        // Load Nexus Loader (one-line import)
+        // ============================================================================
+        const loaderPill = document.getElementById('loaderPill');
+
+        function setStatus(message, type = 'info') {
+          const el = document.getElementById('status');
+          if (!el) return;
+          el.className = 'status show ' + (type || 'info');
+          el.innerHTML = message;
+        }
+
+        function setResult(obj) {
+          const out = document.getElementById('resultOut');
+          if (out) out.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+        }
+
+        function setDebug(obj) {
+          const out = document.getElementById('debugOut');
+          if (out) out.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+        }
+
+        function setBusy(isBusy) {
+          const ids = [
+            'connectBtn','disconnectBtn','btnInstalled','btnFeeRates','btnFeeRate','btnApplyFeeRate',
+            'btnFetchUtxos','btnFetchSpendable','btnGetSpendable','btnFetchInscriptions',
+            'btnValidate','btnEstimate','btnCreate'
+          ];
+          for (const id of ids) {
+            const el = document.getElementById(id);
+            if (!el) continue;
+            if (id === 'disconnectBtn' && el.style.display === 'none') continue;
+            el.disabled = !!isBusy;
+          }
+        }
+
+        function setModalOpen(isOpen) {
+          const modal = document.getElementById('walletModal');
+          if (!modal) return;
+          modal.style.display = isOpen ? 'flex' : 'none';
+        }
+
+        function getAddressInput() {
+          const v = document.getElementById('addressInput')?.value?.trim();
+          return v || null;
+        }
+
+        const LOADER_SAT = '534764996708771';
+        const NexusMod = await import('/r/sat/' + LOADER_SAT + '/at/-1/content');
+        window.Nexus = NexusMod.default;
+
+        if (loaderPill) loaderPill.textContent = 'Nexus loaded (ready)';
+
+        // Enable base UI
+        document.getElementById('connectBtn').disabled = false;
+        document.getElementById('btnInstalled').disabled = false;
+        document.getElementById('btnFeeRates').disabled = false;
+        document.getElementById('btnFeeRate').disabled = false;
+        document.getElementById('btnApplyFeeRate').disabled = false;
+        document.getElementById('btnValidate').disabled = false;
+
+        // ============================================================================
+        // Templates
+        // ============================================================================
+        function setJson(obj) {
+          const el = document.getElementById('jsonConfig');
+          if (!el) return;
+          el.value = JSON.stringify(obj, null, 2);
+        }
+
+        function basicTemplate() {
+          return {
+            version: 1,
+            network: 'mainnet',
+            feeRate: 10,
+            fees: {
+              developer: { enabled: false },
+              customFees: []
+            },
+            defaults: {
+              contentType: 'text/plain;charset=utf-8',
+              metaprotocol: '',
+              metadata: { app: 'nexus-inscriber', demo: 'example-full' },
+              properties: { collection: 'Demo' },
+              postage: 546
+            },
+            items: [
+              {
+                fileName: 'hello.txt',
+                content: 'Hello Bitcoin! (basic demo)',
+                repeatCount: 1
+              }
+            ]
+          };
+        }
+
+        function advancedTemplate() {
+          return {
+            version: 1,
+            network: 'mainnet',
+            feeRate: 10,
+            fees: {
+              developer: {
+                enabled: false,
+                address: 'bc1pYOUR_DEV_FEE_ADDRESS_HERE',
+                amountSats: 1000,
+                description: 'Developer Fee (optional)',
+                mode: 'transaction'
+              },
+              customFees: [
+                {
+                  address: 'bc1pYOUR_CUSTOM_FEE_ADDRESS_HERE',
+                  amountSats: 500,
+                  description: 'Custom Fee Output #1 (optional)'
+                }
+              ]
+            },
+            defaults: {
+              contentType: 'text/plain;charset=utf-8',
+              metaprotocol: 'ord',
+              metadata: {
+                app: 'nexus-inscriber',
+                demo: 'advanced',
+                note: 'Tip: to enable fees, set real addresses + positive amounts.'
+              },
+              properties: {
+                collection: 'Demo',
+                createdBy: 'example-full.html'
+              },
+              postage: 546
+            },
+            items: [
+              {
+                fileName: 'advanced-1.txt',
+                content: 'Advanced item #1 (text)\n\nFields shown: metaprotocol/metadata/properties.',
+                repeatCount: 1,
+                // Optional advanced per-item fields (uncomment once you have real ids/addresses):
+                // parent: 'PARENT_INSCRIPTION_IDi0',
+                // delegate: 'DELEGATE_INSCRIPTION_IDi0',
+                // pointer: 0,
+                // recipientAddress: 'bc1p...'
+              }
+            ]
+          };
+        }
+
+        function batchBinaryTemplate() {
+          return {
+            version: 1,
+            network: 'mainnet',
+            feeRate: 10,
+            fees: {
+              developer: { enabled: false },
+              customFees: []
+            },
+            defaults: {
+              contentType: 'text/plain;charset=utf-8',
+              metaprotocol: '',
+              metadata: { app: 'nexus-inscriber', demo: 'batch-binary' },
+              properties: { collection: 'Demo' },
+              postage: 546
+            },
+            items: [
+              {
+                fileName: 'batch-1.txt',
+                content: 'Batch item #1',
+                repeatCount: 1
+              },
+              {
+                fileName: 'batch-2.txt',
+                content: 'Batch item #2',
+                repeatCount: 1
+              },
+              {
+                fileName: 'bytes.bin',
+                contentType: 'application/octet-stream',
+                contentBase64: 'AAECAwQFBgcICQ==',
+                repeatCount: 1
+              }
+            ]
+          };
+        }
+
+        setJson(basicTemplate());
+
+        document.getElementById('tplBasic')?.addEventListener('click', () => setJson(basicTemplate()));
+        document.getElementById('tplAdvanced')?.addEventListener('click', () => setJson(advancedTemplate()));
+        document.getElementById('tplBatch')?.addEventListener('click', () => setJson(batchBinaryTemplate()));
+
+        // ============================================================================
+        // Wallet picker modal
+        // ============================================================================
+        const ALL_WALLETS = [
+          { id: 'bitmapwallet', name: 'BitmapWallet' },
+          { id: 'unisat', name: 'UniSat' },
+          { id: 'xverse', name: 'Xverse' },
+          { id: 'okx', name: 'OKX' },
+          { id: 'leather', name: 'Leather' },
+          { id: 'phantom', name: 'Phantom' },
+          { id: 'wizz', name: 'Wizz' },
+          { id: 'oyl', name: 'Oyl' }
+        ];
+
+        function getInstalledWalletsSafe() {
+          try {
+            if (window.Nexus && typeof window.Nexus.getInstalledWallets === 'function') {
+              return window.Nexus.getInstalledWallets() || [];
+            }
+          } catch {}
+          return [];
+        }
+
+        function renderWalletModal() {
+          const list = document.getElementById('walletList');
+          const hint = document.getElementById('walletModalHint');
+          if (!list) return;
+          list.innerHTML = '';
+
+          const installed = getInstalledWalletsSafe();
+          const installedSet = new Set(installed.map(w => w.id));
+          const hasInstallInfo = installed.length > 0;
+
+          if (hint) {
+            hint.textContent = hasInstallInfo
+              ? `Installed: ${installed.map(w => w.name).join(', ')}`
+              : 'Wallet detection unavailable. Try clicking your wallet anyway.';
+          }
+
+          const ordered = ALL_WALLETS.slice().sort((a, b) => {
+            const aIns = installedSet.has(a.id);
+            const bIns = installedSet.has(b.id);
+            if (aIns !== bIns) return aIns ? -1 : 1;
+            return a.name.localeCompare(b.name);
+          });
+
+          for (const w of ordered) {
+            const isInstalled = installedSet.has(w.id);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = hasInstallInfo && !isInstalled ? `${w.name} (not installed)` : w.name;
+            btn.disabled = hasInstallInfo && !isInstalled;
+            btn.style.cssText = [
+              'text-align:left',
+              'background:' + (btn.disabled ? '#eee' : '#667eea'),
+              'color:' + (btn.disabled ? '#777' : '#fff'),
+              'border:none',
+              'padding:12px 12px',
+              'border-radius:12px',
+              'cursor:' + (btn.disabled ? 'not-allowed' : 'pointer'),
+              'font-weight:750'
+            ].join(';');
+            btn.onclick = async () => {
+              if (btn.disabled) return;
+              setModalOpen(false);
+              await connectWallet(w.id);
+            };
+            list.appendChild(btn);
+          }
+        }
+
+        function openWalletModal() {
+          setModalOpen(true);
+          try { renderWalletModal(); }
+          catch (e) {
+            document.getElementById('walletModalHint').textContent = 'Unable to list wallets. See console.';
+            console.error(e);
+          }
+        }
+
+        document.getElementById('connectBtn')?.addEventListener('click', openWalletModal);
+        document.getElementById('walletModalClose')?.addEventListener('click', () => setModalOpen(false));
+        document.getElementById('walletModal')?.addEventListener('click', (e) => {
+          if (e.target && e.target.id === 'walletModal') setModalOpen(false);
+        });
+
+        // ============================================================================
+        // Connect/disconnect + wallet state
+        // ============================================================================
+        function showWalletState(walletId) {
+          const st = window.Nexus.getWalletState?.() || {};
+          document.getElementById('walletInfo').style.display = 'block';
+          document.getElementById('walletType').textContent = walletId || '—';
+          document.getElementById('paymentAddress').textContent = st.paymentAddress || st.address || '—';
+          document.getElementById('ordinalsAddress').textContent = st.ordinalsAddress || st.address || '—';
+        }
+
+        async function connectWallet(walletId) {
+          try {
+            setBusy(true);
+            setStatus(`⏳ Connecting to <span class="mono">${walletId}</span>…`, 'info');
+            const wallet = await window.Nexus.connectWallet(walletId);
+
+            document.getElementById('connectBtn').style.display = 'none';
+            document.getElementById('disconnectBtn').style.display = 'inline-block';
+
+            // Enable “connected-only” actions
+            for (const id of ['btnFetchUtxos','btnFetchSpendable','btnGetSpendable','btnFetchInscriptions','btnEstimate','btnCreate']) {
+              const el = document.getElementById(id);
+              if (el) el.disabled = false;
+            }
+
+            showWalletState(walletId);
+            setStatus(`✅ Connected (${wallet?.address || 'ok'})`, 'success');
+          } catch (e) {
+            setStatus('❌ Connection failed: ' + (e?.message || e), 'error');
+          } finally {
+            setBusy(false);
+          }
+        }
+
+        document.getElementById('disconnectBtn')?.addEventListener('click', async () => {
+          try {
+            setBusy(true);
+            setStatus('⏳ Disconnecting…', 'info');
+            await window.Nexus.disconnect();
+
+            document.getElementById('walletInfo').style.display = 'none';
+            document.getElementById('connectBtn').style.display = 'inline-block';
+            document.getElementById('disconnectBtn').style.display = 'none';
+
+            for (const id of ['btnFetchUtxos','btnFetchSpendable','btnGetSpendable','btnFetchInscriptions','btnEstimate','btnCreate']) {
+              const el = document.getElementById(id);
+              if (el) el.disabled = true;
+            }
+
+            setStatus('Disconnected.', 'warn');
+          } catch (e) {
+            setStatus('❌ Disconnect failed: ' + (e?.message || e), 'error');
+          } finally {
+            setBusy(false);
+          }
+        });
+
+        // ============================================================================
+        // Utilities
+        // ============================================================================
+        let lastFeeRates = null;
+        let lastFeeRatePicked = null;
+
+        document.getElementById('btnInstalled')?.addEventListener('click', async () => {
+          try {
+            setBusy(true);
+            setStatus('⏳ Getting installed wallets…', 'info');
+            const w = window.Nexus.getInstalledWallets();
+            setResult({ installedWallets: w });
+            setDebug({ note: 'getInstalledWallets()', count: w?.length || 0 });
+            setStatus('✅ Installed wallets fetched.', 'success');
+          } catch (e) {
+            setStatus('❌ Failed: ' + (e?.message || e), 'error');
+          } finally {
+            setBusy(false);
+          }
+        });
+
+        document.getElementById('btnFeeRates')?.addEventListener('click', async () => {
+          try {
+            setBusy(true);
+            setStatus('⏳ Fetching fee rates…', 'info');
+            lastFeeRates = await window.Nexus.getFeeRates('mainnet');
+            setResult(lastFeeRates);
+            setDebug({ note: 'getFeeRates(mainnet)' });
+            setStatus('✅ Fee rates fetched.', 'success');
+          } catch (e) {
+            setStatus('❌ Fee rates failed: ' + (e?.message || e), 'error');
+          } finally {
+            setBusy(false);
+          }
+        });
+
+        document.getElementById('btnFeeRate')?.addEventListener('click', async () => {
+          try {
+            setBusy(true);
+            const pr = document.getElementById('feePriority')?.value || 'medium';
+            setStatus(`⏳ Fetching <span class="mono">${pr}</span> fee rate…`, 'info');
+            lastFeeRatePicked = await window.Nexus.getFeeRate(pr, 'mainnet');
+            setResult({ priority: pr, feeRate: lastFeeRatePicked, satPerVb: lastFeeRatePicked });
+            setDebug({ note: 'getFeeRate(priority, mainnet)' });
+            setStatus('✅ Fee rate picked.', 'success');
+          } catch (e) {
+            setStatus('❌ Fee rate failed: ' + (e?.message || e), 'error');
+          } finally {
+            setBusy(false);
+          }
+        });
+
+        document.getElementById('btnApplyFeeRate')?.addEventListener('click', async () => {
+          try {
+            const rate = Number(lastFeeRatePicked);
+            if (!Number.isFinite(rate) || rate <= 0) {
+              throw new Error('Pick a fee rate first (Get Fee Rate)');
+            }
+            const el = document.getElementById('jsonConfig');
+            const obj = JSON.parse(el.value);
+            obj.feeRate = rate;
+            el.value = JSON.stringify(obj, null, 2);
+            setStatus(`✅ Applied feeRate=${rate} to JSON.`, 'success');
+          } catch (e) {
+            setStatus('❌ Apply failed: ' + (e?.message || e), 'error');
+          }
+        });
+
+        document.getElementById('btnFetchUtxos')?.addEventListener('click', async () => {
+          try {
+            setBusy(true);
+            setStatus('⏳ fetchUtxos()…', 'info');
+            const addr = getAddressInput();
+            const res = await window.Nexus.fetchUtxos(addr || undefined);
+            setResult({ utxos: res?.utxos || [], fees: res?.fees, providers: res?.providers, cached: res?.cached });
+            setDebug({ note: 'fetchUtxos(addresses?)', utxoCount: (res?.utxos || []).length });
+            setStatus('✅ UTXOs fetched.', 'success');
+          } catch (e) {
+            setStatus('❌ fetchUtxos failed: ' + (e?.message || e), 'error');
+          } finally {
+            setBusy(false);
+          }
+        });
+
+        document.getElementById('btnFetchSpendable')?.addEventListener('click', async () => {
+          try {
+            setBusy(true);
+            setStatus('⏳ fetchSpendableUtxos()…', 'info');
+            const addr = getAddressInput();
+            const progressMode = document.getElementById('spendableProgress')?.value || 'off';
+
+            const res = await window.Nexus.fetchSpendableUtxos(addr || undefined, {
+              progressCallback: progressMode === 'on'
+                ? (p) => {
+                    // p shape depends on core; just echo it.
+                    setDebug({ note: 'filterSpendableUtxos progress', progress: p });
+                  }
+                : undefined
+            });
+
+            setResult({
+              spendable: res?.spendable || [],
+              unsafe: res?.unsafe || [],
+              inscriptions: res?.inscriptions || [],
+              runes: res?.runes || [],
+              rareSats: res?.rareSats || [],
+              fees: res?.fees,
+              cached: res?.cached
+            });
+            setDebug({
+              note: 'fetchSpendableUtxos(addresses?)',
+              spendableCount: (res?.spendable || []).length,
+              unsafeCount: (res?.unsafe || []).length
+            });
+            setStatus('✅ Spendable UTXOs computed.', 'success');
+          } catch (e) {
+            setStatus('❌ fetchSpendableUtxos failed: ' + (e?.message || e), 'error');
+          } finally {
+            setBusy(false);
+          }
+        });
+
+        document.getElementById('btnGetSpendable')?.addEventListener('click', async () => {
+          try {
+            setBusy(true);
+            setStatus('⏳ getSpendableUtxos()…', 'info');
+            const addr = getAddressInput();
+            const res = await window.Nexus.getSpendableUtxos(addr || undefined);
+            setResult(res);
+            setDebug({ note: 'getSpendableUtxos(addresses?)', spendableCount: (res || []).length });
+            setStatus('✅ Spendable UTXO list ready.', 'success');
+          } catch (e) {
+            setStatus('❌ getSpendableUtxos failed: ' + (e?.message || e), 'error');
+          } finally {
+            setBusy(false);
+          }
+        });
+
+        document.getElementById('btnFetchInscriptions')?.addEventListener('click', async () => {
+          try {
+            setBusy(true);
+            setStatus('⏳ fetchInscriptions()…', 'info');
+            const addr = getAddressInput();
+            const res = await window.Nexus.fetchInscriptions(addr || undefined);
+            setResult(res);
+            setDebug({ note: 'fetchInscriptions(address?)' });
+            setStatus('✅ Inscriptions fetched.', 'success');
+          } catch (e) {
+            setStatus('❌ fetchInscriptions failed: ' + (e?.message || e), 'error');
+          } finally {
+            setBusy(false);
+          }
+        });
+
+        // ============================================================================
+        // JSON validation + estimate + create
+        // ============================================================================
+        document.getElementById('btnValidate')?.addEventListener('click', async () => {
+          try {
+            setBusy(true);
+            setStatus('⏳ validateJson()…', 'info');
+            const jsonText = document.getElementById('jsonConfig').value;
+            const validated = window.Nexus.validateJson(jsonText);
+            setResult(validated);
+            setDebug({ note: 'validateJson(json)' });
+            setStatus('✅ JSON validated.', 'success');
+          } catch (e) {
+            setStatus('❌ Validation failed: ' + (e?.message || e), 'error');
+          } finally {
+            setBusy(false);
+          }
+        });
+
+        document.getElementById('btnEstimate')?.addEventListener('click', async () => {
+          try {
+            setBusy(true);
+            setStatus('⏳ Estimating fees…', 'info');
+            const jsonText = document.getElementById('jsonConfig').value;
+            const fees = await window.Nexus.estimateFees(jsonText);
+            setResult(fees);
+            setDebug({ note: 'estimateFees(json)' });
+            setStatus('✅ Fee estimate ready.', 'success');
+          } catch (e) {
+            setStatus('❌ Estimate failed: ' + (e?.message || e), 'error');
+          } finally {
+            setBusy(false);
+          }
+        });
+
+        function pickCommitId(result) {
+          return result?.commitTxId || result?.commitTxid || result?.commitTxID || result?.commit || null;
+        }
+
+        function pickRevealIds(result) {
+          return result?.revealTxIds || result?.revealTxids || result?.revealTxid || result?.reveal || null;
+        }
+
+        document.getElementById('btnCreate')?.addEventListener('click', async () => {
+          try {
+            setBusy(true);
+            setStatus('⏳ Creating inscription… approve in wallet…', 'warn');
+
+            const jsonText = document.getElementById('jsonConfig').value;
+            const result = await window.Nexus.createInscription(jsonText);
+
+            const commit = pickCommitId(result);
+            const reveal = pickRevealIds(result);
+
+            setResult(result);
+            setDebug({
+              note: 'createInscription(json)',
+              commitTx: commit,
+              revealTx: reveal
+            });
+
+            const links = [];
+            if (commit) links.push(`Commit: <a href="https://mempool.space/tx/${commit}" target="_blank" rel="noreferrer">${String(commit).slice(0, 18)}…</a>`);
+            if (Array.isArray(reveal) && reveal[0]) links.push(`Reveal: <a href="https://mempool.space/tx/${reveal[0]}" target="_blank" rel="noreferrer">${String(reveal[0]).slice(0, 18)}…</a>`);
+            if (typeof reveal === 'string') links.push(`Reveal: <a href="https://mempool.space/tx/${reveal}" target="_blank" rel="noreferrer">${String(reveal).slice(0, 18)}…</a>`);
+
+            setStatus('✅ Inscription request sent.<br>' + (links.length ? links.join('<br>') : ''), 'success');
+          } catch (e) {
+            setStatus('❌ Create failed: ' + (e?.message || e), 'error');
+          } finally {
+            setBusy(false);
+          }
+        });
+
+        // Small default status
+        setStatus('Ready. Connect a wallet, then try the loader utilities and inscription flow.', 'info');
+      </script>
+    </div>
+  </div>
+</body>
+</html>

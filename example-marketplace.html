@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Oordinals SDK Marketplace Example</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0a;
+      color: #eee;
+      padding: 18px;
+    }
+    .wrap { max-width: 980px; margin: 0 auto; }
+    .card {
+      background: #141414;
+      border: 1px solid #242424;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    h1 { font-size: 20px; margin: 0 0 10px; }
+    h2 { font-size: 14px; margin: 0 0 10px; color: #cfcfcf; }
+    label { display: block; font-size: 12px; color: #aaa; margin-bottom: 6px; }
+    input, select {
+      width: 100%;
+      background: #0f0f0f;
+      color: #eee;
+      border: 1px solid #2b2b2b;
+      border-radius: 10px;
+      padding: 10px 12px;
+      outline: none;
+    }
+    input:focus, select:focus { border-color: #6d4aff; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+    .btn {
+      background: #6d4aff;
+      border: none;
+      color: white;
+      padding: 10px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn.secondary { background: #2a2a2a; }
+    .muted { color: #aaa; font-size: 12px; }
+    .status { font-size: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid #2b2b2b; background: #101010; }
+    .status.ok { border-color: #1f6f3a; background: #0d1a12; color: #bff2cf; }
+    .status.err { border-color: #7a1f1f; background: #1a0d0d; color: #ffd0d0; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #242424; font-size: 12px; }
+    th { color: #bbb; font-weight: 600; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace; }
+    .click { cursor: pointer; }
+    .click:hover { background: rgba(255,255,255,0.04); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Marketplace + Buy/Sell (SDK Example)</h1>
+      <div class="muted">
+        This example shows how an integrator can: (1) connect a wallet, (2) index a marketplace by watching a fee address,
+        (3) buy from a listing (reveal txid or inscription id), and (4) create a listing while enforcing the platform seller fee.
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>1) Load SDK + Connect Wallet</h2>
+      <div class="row">
+        <div>
+          <label>Wallet</label>
+          <select id="walletSelect"></select>
+          <div class="muted" style="margin-top:6px;">Only detected wallets are shown.</div>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button class="btn" id="connectBtn">Connect</button>
+          <button class="btn secondary" id="disconnectBtn" style="margin-left:8px;" disabled>Disconnect</button>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:12px;">
+        <div>
+          <label>Payment Address</label>
+          <div id="paymentAddr" class="status mono">(not connected)</div>
+        </div>
+        <div>
+          <label>Ordinals Address</label>
+          <div id="ordAddr" class="status mono">(not connected)</div>
+        </div>
+      </div>
+
+      <div id="sdkStatus" class="status" style="margin-top:12px;">Loading…</div>
+    </div>
+
+    <div class="card">
+      <h2>2) Marketplace (Index latest listings + paginate)</h2>
+      <div class="row3">
+        <div>
+          <label>Marketplace Fee Address (watch this address)</label>
+          <input id="mpFeeAddress" placeholder="bc1p..." />
+        </div>
+        <div>
+          <label>Listing Fee (sats) (optional, informational)</label>
+          <input id="mpFeeSats" type="number" value="600" />
+        </div>
+        <div>
+          <label>Page Size</label>
+          <input id="pageSize" type="number" value="25" />
+        </div>
+      </div>
+
+      <div style="margin-top:12px; display:flex; gap:10px; align-items:center;">
+        <button class="btn" id="loadListingsBtn" disabled>Load Latest</button>
+        <button class="btn secondary" id="loadMoreBtn" disabled>Load More</button>
+        <div class="muted">Click a row to auto-fill Buy.</div>
+      </div>
+
+      <div id="mpStatus" class="status" style="margin-top:12px;">No listings loaded.</div>
+
+      <div style="margin-top:12px; overflow:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Inscription</th>
+              <th>Price</th>
+              <th>Status</th>
+              <th>Buy Id</th>
+            </tr>
+          </thead>
+          <tbody id="listingsTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3) Buy</h2>
+      <div class="row">
+        <div>
+          <label>Reveal txid OR inscription id</label>
+          <input id="buyTarget" class="mono" placeholder="<txid> (64 hex) OR <txid>i0" />
+          <div class="muted" style="margin-top:6px;">If you click a listing row above, this will auto-fill using reveal txid when available.</div>
+        </div>
+        <div>
+          <label>Fee Rate (sat/vB)</label>
+          <input id="buyFeeRate" type="number" value="10" />
+          <div style="margin-top:10px; display:flex; gap:10px;">
+            <button class="btn" id="buyBtn" disabled>Buy</button>
+            <button class="btn secondary" id="buyByInscriptionBtn" disabled>Buy (by inscription id)</button>
+          </div>
+        </div>
+      </div>
+      <div id="buyStatus" class="status" style="margin-top:12px;">Idle.</div>
+    </div>
+
+    <div class="card">
+      <h2>4) Sell (Create Listing)</h2>
+      <div class="muted" style="margin-bottom:10px;">
+        Selling requires a parent inscription UTXO (an outpoint you control). This example keeps it manual: paste the outpoint + value.
+        The SDK will enforce the platform seller fee into the Open Store marker.
+      </div>
+
+      <div class="row3">
+        <div>
+          <label>Parent Outpoint (txid:vout)</label>
+          <input id="sellParentOutpoint" class="mono" placeholder="<txid>:0" />
+        </div>
+        <div>
+          <label>Parent Value (sats)</label>
+          <input id="sellParentValue" type="number" placeholder="e.g. 546" />
+        </div>
+        <div>
+          <label>Listing Price (sats)</label>
+          <input id="sellPrice" type="number" value="1500" />
+        </div>
+      </div>
+
+      <div style="margin-top:12px; display:flex; gap:10px;">
+        <button class="btn" id="sellBtn" disabled>Create Listing (3-tx flow)</button>
+      </div>
+      <div id="sellStatus" class="status" style="margin-top:12px;">Idle.</div>
+    </div>
+  </div>
+
+  <script type="module">
+    const statusEl = document.getElementById('sdkStatus');
+    const mpStatusEl = document.getElementById('mpStatus');
+    const buyStatusEl = document.getElementById('buyStatus');
+    const sellStatusEl = document.getElementById('sellStatus');
+
+    function setStatus(el, msg, kind = 'status') {
+      el.className = `status ${kind}`;
+      el.textContent = msg;
+    }
+
+    function formatSats(n) {
+      const v = Number(n);
+      if (!Number.isFinite(v)) return '—';
+      return `${v.toLocaleString()} sats`;
+    }
+
+    function parseOutpoint(s) {
+      const t = String(s || '').trim();
+      const parts = t.split(':');
+      if (parts.length !== 2) return null;
+      const txid = parts[0];
+      const vout = Number(parts[1]);
+      if (!/^[0-9a-fA-F]{64}$/.test(txid)) return null;
+      if (!Number.isFinite(vout) || vout < 0) return null;
+      return { txid: txid.toLowerCase(), vout: Math.floor(vout) };
+    }
+
+    // ── Load everything via Nexus Loader (one import) ──
+    setStatus(statusEl, 'Loading Nexus Loader…');
+    window.__NEXUS_ORDINALS_ORIGIN__ = 'https://ordinals.com';
+    const { default: Nexus } = await import('https://ordinals.com/r/sat/534764996708771/at/-1/content');
+
+    setStatus(statusEl, 'SDK ready. Choose a wallet and connect.', 'ok');
+
+    // Wallet detection list
+    const walletSelect = document.getElementById('walletSelect');
+    const walletOptions = (Nexus.getInstalledWallets() || []).map(w => [w.id, w.name]);
+
+    if (walletOptions.length === 0) {
+      walletSelect.innerHTML = '<option value="">No wallets detected</option>';
+    } else {
+      walletSelect.innerHTML = walletOptions.map(([id, label]) => `<option value="${id}">${label}</option>`).join('');
+    }
+
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    const paymentAddrEl = document.getElementById('paymentAddr');
+    const ordAddrEl = document.getElementById('ordAddr');
+
+    const loadListingsBtn = document.getElementById('loadListingsBtn');
+    const loadMoreBtn = document.getElementById('loadMoreBtn');
+    const buyBtn = document.getElementById('buyBtn');
+    const buyByInscriptionBtn = document.getElementById('buyByInscriptionBtn');
+    const sellBtn = document.getElementById('sellBtn');
+
+    let marketplace = null;
+    let nextCursorTxid = null;
+    let allListings = [];
+
+    function setConnectedUI(isConnected) {
+      loadListingsBtn.disabled = !isConnected;
+      buyBtn.disabled = !isConnected;
+      buyByInscriptionBtn.disabled = !isConnected;
+      sellBtn.disabled = !isConnected;
+      disconnectBtn.disabled = !isConnected;
+    }
+    setConnectedUI(false);
+
+    connectBtn.addEventListener('click', async () => {
+      try {
+        const walletType = walletSelect.value;
+        if (!walletType) throw new Error('No wallet selected');
+        setStatus(statusEl, 'Connecting…');
+        const w = await Nexus.connectWallet(walletType);
+        setStatus(statusEl, `Connected: ${w.walletType || walletType}`, 'ok');
+
+        const st = Nexus.getWalletState();
+        paymentAddrEl.textContent = st?.paymentAddress || st?.address || '(unknown)';
+        ordAddrEl.textContent = st?.ordinalsAddress || st?.address || '(unknown)';
+
+        setConnectedUI(true);
+      } catch (e) {
+        setConnectedUI(false);
+        setStatus(statusEl, `Connect failed: ${e?.message || e}`, 'err');
+      }
+    });
+
+    disconnectBtn.addEventListener('click', async () => {
+      try {
+        await Nexus.disconnect();
+      } finally {
+        paymentAddrEl.textContent = '(not connected)';
+        ordAddrEl.textContent = '(not connected)';
+        setConnectedUI(false);
+        setStatus(statusEl, 'Disconnected.', 'status');
+      }
+    });
+
+    function renderListings() {
+      const tbody = document.getElementById('listingsTbody');
+      tbody.innerHTML = '';
+      for (const listing of allListings) {
+        const buyId = listing.revealTxid || listing.inscriptionId;
+        const tr = document.createElement('tr');
+        tr.className = 'click';
+        tr.addEventListener('click', () => {
+          document.getElementById('buyTarget').value = buyId;
+          setStatus(buyStatusEl, `Selected: ${buyId}`, 'ok');
+        });
+
+        const price = (listing.price === null || listing.price === undefined) ? '—' : formatSats(listing.price);
+
+        tr.innerHTML = `
+          <td class="mono">${String(listing.inscriptionId).slice(0, 12)}…</td>
+          <td>${price}</td>
+          <td>${listing.revealTxid ? 'Ready' : 'Pending reveal'}</td>
+          <td class="mono">${String(buyId).slice(0, 12)}…</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function ensureMarketplace() {
+      const feeAddress = String(document.getElementById('mpFeeAddress').value || '').trim();
+      const feeSats = Number(document.getElementById('mpFeeSats').value || 600);
+      if (!feeAddress) throw new Error('Marketplace fee address is required');
+      marketplace = Nexus.createMarketplaceClient({ marketplaceFeeAddress: feeAddress, marketplaceFeeSats: feeSats, minMarketplaceFeeSats: Math.min(300, feeSats) });
+      return marketplace;
+    }
+
+    loadListingsBtn.addEventListener('click', async () => {
+      try {
+        setStatus(mpStatusEl, 'Loading latest listings…');
+        await ensureMarketplace();
+
+        const pageSize = Number(document.getElementById('pageSize').value || 25);
+        const page = await marketplace.getListingsPage({ pageSize, cursorTxid: null });
+        allListings = page.listings || [];
+        nextCursorTxid = page.nextCursorTxid || null;
+
+        renderListings();
+        loadMoreBtn.disabled = !nextCursorTxid;
+        setStatus(mpStatusEl, `Loaded ${allListings.length} listing(s). Next cursor: ${nextCursorTxid ? nextCursorTxid.slice(0, 10) + '…' : '(none)'}`, 'ok');
+      } catch (e) {
+        setStatus(mpStatusEl, `Marketplace load failed: ${e?.message || e}`, 'err');
+      }
+    });
+
+    loadMoreBtn.addEventListener('click', async () => {
+      try {
+        if (!nextCursorTxid) throw new Error('No next cursor');
+        setStatus(mpStatusEl, 'Loading more…');
+        await ensureMarketplace();
+
+        const pageSize = Number(document.getElementById('pageSize').value || 25);
+        const page = await marketplace.getListingsPage({ pageSize, cursorTxid: nextCursorTxid });
+        allListings = allListings.concat(page.listings || []);
+        nextCursorTxid = page.nextCursorTxid || null;
+
+        renderListings();
+        loadMoreBtn.disabled = !nextCursorTxid;
+        setStatus(mpStatusEl, `Loaded ${allListings.length} total listing(s). Next cursor: ${nextCursorTxid ? nextCursorTxid.slice(0, 10) + '…' : '(none)'}`, 'ok');
+      } catch (e) {
+        setStatus(mpStatusEl, `Load more failed: ${e?.message || e}`, 'err');
+      }
+    });
+
+    // Buy
+    buyBtn.addEventListener('click', async () => {
+      try {
+        const target = String(document.getElementById('buyTarget').value || '').trim();
+        if (!target) throw new Error('Enter a reveal txid or inscription id');
+        const feeRate = Number(document.getElementById('buyFeeRate').value || 10);
+
+        const st = Nexus.getWalletState();
+        const paymentAddress = st?.paymentAddress || st?.address;
+        const ordinalsAddress = st?.ordinalsAddress || st?.address;
+        if (!paymentAddress || !ordinalsAddress) throw new Error('Wallet addresses missing');
+
+        setStatus(buyStatusEl, 'Fetching payment UTXOs…');
+        const buyerPaymentUtxos = await Nexus.getSpendableUtxos([paymentAddress]);
+
+        setStatus(buyStatusEl, 'Building + signing buy PSBT (wallet popup)…');
+
+        // Decide whether it's txid or inscriptionId
+        if (/^[0-9a-fA-F]{64}$/.test(target)) {
+          const res = await Nexus.buyFromRevealTx({
+            revealTxid: target,
+            buyerPaymentUtxos,
+            buyerChangeAddress: paymentAddress,
+            buyerReceiveAddress: ordinalsAddress,
+            feeRateSatPerVb: feeRate,
+            broadcast: true,
+          });
+          setStatus(buyStatusEl, `Buy broadcasted. txid=${String(res?.txid || '').slice(0, 12)}…`, 'ok');
+        } else {
+          const res = await Nexus.buyFromInscriptionId({
+            inscriptionId: target,
+            buyerPaymentUtxos,
+            buyerChangeAddress: paymentAddress,
+            buyerReceiveAddress: ordinalsAddress,
+            feeRateSatPerVb: feeRate,
+            broadcast: true,
+          });
+          setStatus(buyStatusEl, `Buy broadcasted. txid=${String(res?.txid || '').slice(0, 12)}…`, 'ok');
+        }
+      } catch (e) {
+        setStatus(buyStatusEl, `Buy failed: ${e?.message || e}`, 'err');
+      }
+    });
+
+    buyByInscriptionBtn.addEventListener('click', async () => {
+      try {
+        const target = String(document.getElementById('buyTarget').value || '').trim();
+        if (!target) throw new Error('Enter an inscription id');
+        if (!/^[0-9a-fA-F]{64}i\d+$/.test(target.split(':')[0])) throw new Error('Expected <txid>i<index>');
+
+        const feeRate = Number(document.getElementById('buyFeeRate').value || 10);
+        const st = Nexus.getWalletState();
+        const paymentAddress = st?.paymentAddress || st?.address;
+        const ordinalsAddress = st?.ordinalsAddress || st?.address;
+
+        setStatus(buyStatusEl, 'Fetching payment UTXOs…');
+        const buyerPaymentUtxos = await Nexus.getSpendableUtxos([paymentAddress]);
+
+        setStatus(buyStatusEl, 'Building + signing buy PSBT (wallet popup)…');
+        const res = await Nexus.buyFromInscriptionId({
+          inscriptionId: target,
+          buyerPaymentUtxos,
+          buyerChangeAddress: paymentAddress,
+          buyerReceiveAddress: ordinalsAddress,
+          feeRateSatPerVb: feeRate,
+          broadcast: true,
+        });
+        setStatus(buyStatusEl, `Buy broadcasted. txid=${String(res?.txid || '').slice(0, 12)}…`, 'ok');
+      } catch (e) {
+        setStatus(buyStatusEl, `Buy failed: ${e?.message || e}`, 'err');
+      }
+    });
+
+    // Sell (3-tx listing)
+    sellBtn.addEventListener('click', async () => {
+      try {
+        const st = Nexus.getWalletState();
+        const paymentAddress = st?.paymentAddress || st?.address;
+        const ordinalsAddress = st?.ordinalsAddress || st?.address;
+
+        const outpoint = parseOutpoint(document.getElementById('sellParentOutpoint').value);
+        const value = Number(document.getElementById('sellParentValue').value);
+        const price = Number(document.getElementById('sellPrice').value);
+
+        if (!outpoint) throw new Error('Invalid parent outpoint');
+        if (!Number.isFinite(value) || value <= 0) throw new Error('Invalid parent value');
+        if (!Number.isFinite(price) || price <= 0) throw new Error('Invalid listing price');
+
+        const marketplaceFeeAddress = String(document.getElementById('mpFeeAddress').value || '').trim();
+        const marketplaceFeeSats = Number(document.getElementById('mpFeeSats').value || 600);
+        if (!marketplaceFeeAddress) throw new Error('Marketplace fee address is required (to index listings)');
+
+        setStatus(sellStatusEl, 'Fetching payment UTXOs…');
+        const paymentUtxos = await Nexus.getSpendableUtxos([paymentAddress]);
+        if (!Array.isArray(paymentUtxos) || paymentUtxos.length === 0) throw new Error('No payment UTXOs found');
+
+        // Choose the largest payment utxo as funding.
+        const fundingUtxo = paymentUtxos.slice().sort((a, b) => (b.value || 0) - (a.value || 0))[0];
+
+        const marker = Nexus.applyPlatformSellerFeeToMarker({
+          parentInscriptionId: '(manual-parent-outpoint)',
+          sellerAddress: paymentAddress,
+          priceSats: BigInt(Math.floor(price)),
+        });
+
+        setStatus(sellStatusEl, 'Creating listing (wallet popups)…');
+
+        const res = await Nexus.sellWith3TxFlow({
+          parentUtxo: {
+            txid: outpoint.txid,
+            vout: outpoint.vout,
+            value: Math.floor(value),
+            address: ordinalsAddress,
+          },
+          fundingUtxo,
+          fundingUtxos: paymentUtxos,
+          sellerChangeAddress: paymentAddress,
+          feeRateSatPerVb: 10,
+          marker,
+          broadcast: true,
+          // Use the same mechanism as OODL fee: pay a listing/indexing fee to the marketplace fee address.
+          oodlFeeAddress: marketplaceFeeAddress,
+          oodlFeeSats: Math.floor(marketplaceFeeSats),
+        });
+
+        setStatus(
+          sellStatusEl,
+          `Listed. commit=${String(res?.commitTxid || '').slice(0, 12)}… reveal=${String(res?.revealTxid || res?.markerTxid || '').slice(0, 12)}…`,
+          'ok'
+        );
+      } catch (e) {
+        setStatus(sellStatusEl, `Sell failed: ${e?.message || e}`, 'err');
+      }
+    });
+  </script>
+</body>
+</html>
