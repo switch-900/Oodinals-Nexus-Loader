@@ -28,7 +28,7 @@ All URLs are root-relative (`/r/sat/...`) so they work on ordinals.com or any re
 const { default: Nexus } = await import('/r/sat/534764996708771/at/-1/content');
 ```
 
-The Loader uses a popup-proxy for API calls (UTXOs, fee rates, broadcasting) to work within ordinals.com CSP. Each API call that needs external data will briefly open a small popup window.
+The Loader makes API calls (UTXOs, fee rates, broadcasting) directly where possible. A popup-proxy window is only opened as a last resort when a direct request is blocked by the ordinals.com CSP — most calls will not require one.
 
 ### From an external site
 
@@ -172,7 +172,7 @@ console.log(estimate.revealFee);
 
 ## Fee Rates
 
-> **On-chain note:** `getFeeRate()` opens a proxy popup window to fetch live data. Do not call it in the same click handler as `createInscription()` — each needs its own user gesture. If you don't need live rates, just hardcode `feeRate` in your JSON config.
+> **On-chain note:** `getFeeRate()` fetches live data directly. A popup window is only opened as a last resort if the direct request is blocked. In practice you can call it in the same flow as other methods — but if you don't need live rates, hardcoding `feeRate` in your JSON config is still the simplest option.
 
 ```js
 // Separate button for fee rates (needs its own click)
@@ -192,16 +192,31 @@ Priority options: `'fast'`, `'medium'`, `'slow'`, `'minimum'`
 ```js
 const state = Nexus.getWalletState();
 
-// Spendable only (inscriptions/runes filtered out)
+// Spendable only — returns a flat array of UTXOs safe to use as fee inputs
 const utxos = await Nexus.getSpendableUtxos([state.paymentAddress]);
 
-// All UTXOs with classification
+// Full classification — returns an object with categorised buckets
 const classified = await Nexus.fetchSpendableUtxos([state.paymentAddress]);
-// classified.spendable, classified.unsafe
+// Returns: { spendable: [], unsafe: [], unconfirmed: [], inscriptions: [], runes: [], rareSats: [], fees, cached }
 
-// Raw UTXOs (unfiltered)
+// Raw UTXOs (unfiltered, no classification)
 const raw = await Nexus.fetchUtxos([state.paymentAddress]);
 ```
+
+### Finding Inscriptions in UTXOs
+
+```js
+const utxos = await Nexus.fetchSpendableUtxos(address);
+// Returns: { unsafe: [], spendable: [], unconfirmed: [] }
+```
+
+Users can filter UTXOs to control which outputs are used for fees:
+
+- **`spendable`** — UTXOs that appear safe to spend (filters out ordinals and runes)
+- **`unsafe`** — UTXOs that contain known inscriptions or other protected assets
+- **`unconfirmed`** — UTXOs from unconfirmed transactions
+
+> **Important:** The `spendable` filter uses ordinals standard detection, but things outside the standard may not be identified. Many wallets have built-in features to protect non-standard assets. You can let users manually select UTXOs to exclude from the spendable fee pool as an additional safety option.
 
 ---
 
@@ -367,8 +382,8 @@ All fields except `items[].content` (or `contentBase64`) are optional. Defaults 
 | `getFeeRates(network?)` | `{ fast, medium, slow, minimum }` in sat/vB |
 | `getFeeRate(priority?, network?)` | Single fee rate |
 | **UTXOs** | |
-| `getSpendableUtxos(addresses)` | Spendable UTXOs (inscriptions filtered) |
-| `fetchSpendableUtxos(addresses)` | Classified `{ spendable, unsafe }` |
+| `getSpendableUtxos(addresses)` | Flat array of spendable UTXOs (inscriptions/runes filtered out) |
+| `fetchSpendableUtxos(addresses)` | Classified `{ spendable, unsafe, unconfirmed, inscriptions, runes, rareSats, fees, cached }` |
 | `fetchUtxos(addresses)` | Raw unfiltered UTXOs |
 | **Marketplace** | |
 | `createMarketplaceClient(config)` | Listing indexer / paginator |

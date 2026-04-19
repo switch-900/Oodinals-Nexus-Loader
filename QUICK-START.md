@@ -163,9 +163,9 @@ console.log(page.nextCursorTxid); // Pass to next call to paginate
 | `validateJson(config)` | Validate inscription JSON |
 | `getFeeRates(network?)` | Live fee rates `{ fast, medium, slow, minimum }` |
 | `getFeeRate(priority?)` | Single fee rate (sat/vB) |
-| `getSpendableUtxos(addrs)` | Spendable UTXOs (filters inscriptions/runes) |
+| `getSpendableUtxos(addrs)` | Flat array of spendable UTXOs (inscriptions/runes filtered out) |
 | `fetchUtxos(addrs?)` | All raw UTXOs (unfiltered) |
-| `fetchSpendableUtxos(addrs?)` | UTXOs classified as spendable/unsafe |
+| `fetchSpendableUtxos(addrs?)` | UTXOs classified as `{ spendable, unsafe, unconfirmed, inscriptions, runes, rareSats, fees, cached }` |
 | `createMarketplaceClient(cfg)` | Marketplace listing indexer |
 | `buyFromRevealTx(params)` | Buy by reveal txid |
 | `buyFromInscriptionId(params)` | Buy by inscription id |
