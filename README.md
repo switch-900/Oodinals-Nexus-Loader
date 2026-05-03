@@ -28,7 +28,7 @@ All URLs are root-relative (`/r/sat/...`) so they work on ordinals.com or any re
 const { default: Nexus } = await import('/r/sat/534764996708771/at/-1/content');
 ```
 
-The Loader makes API calls (UTXOs, fee rates, broadcasting) directly where possible. A popup-proxy window is only opened as a last resort when a direct request is blocked by the ordinals.com CSP — most calls will not require one.
+The Loader uses a popup-proxy for API calls (UTXOs, fee rates, broadcasting) to work within ordinals.com CSP. Each API call that needs external data will briefly open a small popup window.
 
 ### From an external site
 
@@ -38,6 +38,28 @@ Set the origin first, then import:
 window.__NEXUS_ORDINALS_ORIGIN__ = 'https://ordinals.com';
 const { default: Nexus } = await import('https://ordinals.com/r/sat/534764996708771/at/-1/content');
 ```
+
+### Using the chain (sat-based flow)
+
+The recommended chain usage is sat-based imports.
+
+1. Your app imports the Loader from its sat-latest endpoint.
+2. The Loader then imports SDK, Core, and WalletConnect from their sat-latest endpoints.
+3. Reinscribing a newer version on the same sat updates all consumers that use `/at/-1/content`.
+
+```js
+// Loader (sat-latest)
+const { default: Nexus } = await import('/r/sat/534764996708771/at/-1/content');
+```
+
+If you need immutable behavior for compliance/audits, pin exact inscription IDs instead of sat-latest:
+
+```js
+// Example immutable pin (replace with your real inscription id)
+const { default: Nexus } = await import('/content/<loader_inscription_id>');
+```
+
+Use sat-latest for fast upgrades. Use `/content/<id>` pins for strict reproducibility.
 
 ### Named exports
 
@@ -144,9 +166,40 @@ await Nexus.createInscription({
       amountSats: 1000
     },
     customFees: [
-      { address: 'bc1p...', amountSats: 500, description: 'Platform fee' }
+      { address: 'bc1p...', amountSats: 500, description: 'Label' }
     ]
   },
+  items: [{ content: 'Hello!', contentType: 'text/plain' }]
+});
+```
+
+### Platform fee
+
+A 2000 sat platform fee is included automatically. Override or disable per call:
+
+```js
+// Override amount
+await Nexus.createInscription({
+  feeRate: 10,
+  platformFee: 5000,
+  items: [{ content: 'Hello!', contentType: 'text/plain' }]
+});
+
+// Disable for this call
+await Nexus.createInscription({
+  feeRate: 10,
+  platformFee: 0,
+  items: [{ content: 'Hello!', contentType: 'text/plain' }]
+});
+```
+
+See [PLATFORM_FEE.md](./PLATFORM_FEE.md) for full details.
+
+### Sub-1 fee rate
+
+```js
+await Nexus.createInscription({
+  feeRate: 0.5,
   items: [{ content: 'Hello!', contentType: 'text/plain' }]
 });
 ```
@@ -172,7 +225,7 @@ console.log(estimate.revealFee);
 
 ## Fee Rates
 
-> **On-chain note:** `getFeeRate()` fetches live data directly. A popup window is only opened as a last resort if the direct request is blocked. In practice you can call it in the same flow as other methods — but if you don't need live rates, hardcoding `feeRate` in your JSON config is still the simplest option.
+> **On-chain note:** `getFeeRate()` opens a proxy popup window to fetch live data. Do not call it in the same click handler as `createInscription()` — each needs its own user gesture. If you don't need live rates, just hardcode `feeRate` in your JSON config.
 
 ```js
 // Separate button for fee rates (needs its own click)
@@ -192,31 +245,16 @@ Priority options: `'fast'`, `'medium'`, `'slow'`, `'minimum'`
 ```js
 const state = Nexus.getWalletState();
 
-// Spendable only — returns a flat array of UTXOs safe to use as fee inputs
+// Spendable only (inscriptions/runes filtered out)
 const utxos = await Nexus.getSpendableUtxos([state.paymentAddress]);
 
-// Full classification — returns an object with categorised buckets
+// All UTXOs with classification
 const classified = await Nexus.fetchSpendableUtxos([state.paymentAddress]);
-// Returns: { spendable: [], unsafe: [], unconfirmed: [], inscriptions: [], runes: [], rareSats: [], fees, cached }
+// classified.spendable, classified.unsafe
 
-// Raw UTXOs (unfiltered, no classification)
+// Raw UTXOs (unfiltered)
 const raw = await Nexus.fetchUtxos([state.paymentAddress]);
 ```
-
-### Finding Inscriptions in UTXOs
-
-```js
-const utxos = await Nexus.fetchSpendableUtxos(address);
-// Returns: { unsafe: [], spendable: [], unconfirmed: [] }
-```
-
-Users can filter UTXOs to control which outputs are used for fees:
-
-- **`spendable`** — UTXOs that appear safe to spend (filters out ordinals and runes)
-- **`unsafe`** — UTXOs that contain known inscriptions or other protected assets
-- **`unconfirmed`** — UTXOs from unconfirmed transactions
-
-> **Important:** The `spendable` filter uses ordinals standard detection, but things outside the standard may not be identified. Many wallets have built-in features to protect non-standard assets. You can let users manually select UTXOs to exclude from the spendable fee pool as an additional safety option.
 
 ---
 
@@ -323,6 +361,8 @@ The JSON object passed to `createInscription()` and `estimateFees()`:
 {
   "feeRate": 10,
   "network": "mainnet",
+  "platformFee": 2000,
+  "platformFeeAddress": "bc1p...",
   "fees": {
     "developer": {
       "enabled": false,
@@ -361,6 +401,121 @@ The JSON object passed to `createInscription()` and `estimateFees()`:
 }
 ```
 
+### Complete example (all options)
+
+```json
+{
+  "feeRate": 12.5,
+  "network": "mainnet",
+  "platformFee": 2500,
+  "platformFeeAddress": "bc1pqu9t32xuc3kdl2lxnfvgf5tkgmssee450lhepw60yfzv2sga7f0q6jkejr",
+  "fees": {
+    "developer": {
+      "enabled": true,
+      "address": "bc1pdevfeeaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "amountSats": 1200
+    },
+    "customFees": [
+      {
+        "address": "bc1pcustomfeeaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "amountSats": 600,
+        "description": "Platform fee"
+      },
+      {
+        "address": "bc1paffiliatefeeaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "amountSats": 300,
+        "description": "Affiliate fee"
+      }
+    ]
+  },
+  "defaults": {
+    "contentType": "text/plain;charset=utf-8",
+    "metaprotocol": "oodl",
+    "metadata": {
+      "app": "nexus-demo",
+      "version": "1.0.0"
+    },
+    "properties": {
+      "collection": "demo-collection",
+      "env": "prod"
+    },
+    "postage": 546,
+    "parentIds": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaai0"
+    ],
+    "contentEncoding": ""
+  },
+  "items": [
+    {
+      "content": "Hello from Oodinals-Nexus",
+      "contentType": "text/plain",
+      "fileName": "hello.txt",
+      "contentBase64": null,
+      "recipientAddress": "bc1precipientaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "pointer": "0",
+      "delegateId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbi0",
+      "parentIds": [
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci0"
+      ],
+      "metadata": {
+        "name": "hello-item",
+        "type": "text"
+      },
+      "properties": {
+        "tier": "gold",
+        "index": 1
+      },
+      "postage": 1000,
+      "repeatCount": 2
+    },
+    {
+      "content": null,
+      "contentType": "image/png",
+      "fileName": "image.png",
+      "contentBase64": "iVBORw0KGgoAAAANSUhEUgAA...",
+      "recipientAddress": null,
+      "pointer": null,
+      "delegateId": null,
+      "parentIds": [],
+      "metadata": {
+        "name": "image-item"
+      },
+      "properties": {
+        "category": "media"
+      },
+      "postage": 546,
+      "repeatCount": 1
+    }
+  ]
+}
+```
+
+### Minimal valid JSON
+
+```json
+{
+  "items": [
+    {
+      "content": "Hello from Nexus",
+      "contentType": "text/plain"
+    }
+  ]
+}
+```
+
+Binary-only minimal example:
+
+```json
+{
+  "items": [
+    {
+      "contentBase64": "iVBORw0KGgoAAAANSUhEUgAA...",
+      "contentType": "image/png"
+    }
+  ]
+}
+```
+
 All fields except `items[].content` (or `contentBase64`) are optional. Defaults are merged into each item.
 
 ---
@@ -382,8 +537,8 @@ All fields except `items[].content` (or `contentBase64`) are optional. Defaults 
 | `getFeeRates(network?)` | `{ fast, medium, slow, minimum }` in sat/vB |
 | `getFeeRate(priority?, network?)` | Single fee rate |
 | **UTXOs** | |
-| `getSpendableUtxos(addresses)` | Flat array of spendable UTXOs (inscriptions/runes filtered out) |
-| `fetchSpendableUtxos(addresses)` | Classified `{ spendable, unsafe, unconfirmed, inscriptions, runes, rareSats, fees, cached }` |
+| `getSpendableUtxos(addresses)` | Spendable UTXOs (inscriptions filtered) |
+| `fetchSpendableUtxos(addresses)` | Classified `{ spendable, unsafe }` |
 | `fetchUtxos(addresses)` | Raw unfiltered UTXOs |
 | **Marketplace** | |
 | `createMarketplaceClient(config)` | Listing indexer / paginator |
@@ -449,8 +604,8 @@ The Loader imports these automatically. You never need to load them yourself.
 
 | Module | Sat | URL |
 |--------|-----|-----|
-| SHA256 | `1550501128239335` | `/r/sat/1550501128239335/at/-1/content` |
-| secp256k1 | `1550501128240727` | `/r/sat/1550501128240727/at/-1/content` |
+| SHA256 | `1550501128239335` | `/content/c3103d5df09f16f054315bb33dbfca12e09798c5de05b1978961fa6f8600aa5ei0` (immutable) |
+| secp256k1 | `1550501128240727` | `/content/c3103d5df09f16f054315bb33dbfca12e09798c5de05b1978961fa6f8600aa5ei1` (immutable) |
 | SDK | `534764996708111` | `/r/sat/534764996708111/at/-1/content` |
 | Core | `534764996708441` | `/r/sat/534764996708441/at/-1/content` |
-| WalletConnect | `534764996703784` | `/r/sat/534764996703784/at/1/content` |
+| WalletConnect | `534764996703784` | `/r/sat/534764996703784/at/-1/content` |
