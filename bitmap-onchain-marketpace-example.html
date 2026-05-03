@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bitmap Marketplace</title>
+  <style>
+    body { font-family: sans-serif; background: #0a0a0a; color: #eee; padding: 20px; }
+    .card { background: #141414; border: 1px solid #242424; border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+    button { background: #6d4aff; color: #fff; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #242424; font-size: 13px; }
+    th { color: #aaa; }
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover { background: rgba(109,74,255,0.1); }
+    .status { font-size: 13px; padding: 8px 12px; border-radius: 8px; background: #101010; border: 1px solid #2b2b2b; margin-top: 10px; }
+    .ok  { background: #0d1a12; border-color: #1f6f3a; color: #bff2cf; }
+    .err { background: #1a0d0d; border-color: #7a1f1f; color: #ffd0d0; }
+    select { background: #0f0f0f; color: #eee; border: 1px solid #2b2b2b; border-radius: 8px; padding: 8px 10px; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2 style="margin:0 0 12px">1. Connect Wallet</h2>
+    <select id="walletSelect"></select>
+    <button id="connectBtn" style="margin-left:10px">Connect</button>
+    <div id="walletStatus" class="status">Not connected</div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 12px">2. Browse Bitmaps For Sale</h2>
+    <button id="loadBtn" disabled>Load Listings</button>
+    <div id="loadStatus" class="status">Connect wallet first.</div>
+
+    <table id="listingsTable" style="display:none">
+      <thead>
+        <tr>
+          <th>Inscription ID</th>
+          <th>Price</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="listingsTbody"></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 6px">3. Buy</h2>
+    <p style="color:#aaa; font-size:13px">Click a listing row above to auto-select, or paste an inscription ID.</p>
+    <input id="buyTarget" placeholder="<txid>i0" style="background:#0f0f0f;color:#eee;border:1px solid #2b2b2b;border-radius:8px;padding:8px 12px;width:480px;font-family:monospace;font-size:13px" />
+    <input id="feeRate" type="number" value="10" style="background:#0f0f0f;color:#eee;border:1px solid #2b2b2b;border-radius:8px;padding:8px 10px;width:90px;margin-left:8px" placeholder="sat/vB" />
+    <button id="buyBtn" disabled style="margin-left:8px">Buy</button>
+    <div id="buyStatus" class="status">Idle.</div>
+  </div>
+
+  <script type="module">
+    // ── 1. Load Nexus via inscribed loader (on-chain relative path) ─────────
+    const { default: Nexus } = await import('/r/sat/534764996708771/at/-1/content');
+
+    // ── 2. Populate wallet selector ─────────────────────────────────────────
+    // All wallets supported by the SDK — used as fallback list
+    const ALL_WALLETS = [
+      { id: 'unisat',      name: 'UniSat' },
+      { id: 'xverse',      name: 'Xverse' },
+      { id: 'okx',         name: 'OKX' },
+      { id: 'leather',     name: 'Leather' },
+      { id: 'phantom',     name: 'Phantom' },
+      { id: 'wizz',        name: 'Wizz' },
+      { id: 'oyl',         name: 'Oyl' },
+      { id: 'bitmapwallet',name: 'BitmapWallet' },
+    ];
+
+    const walletSelect = document.getElementById('walletSelect');
+    const installed = Nexus.getInstalledWallets() || [];
+    const installedIds = new Set(installed.map(w => w.id));
+
+    // Show detected wallets first (marked ✓), then undetected ones below a divider
+    const detectedOptions = ALL_WALLETS
+      .filter(w => installedIds.has(w.id))
+      .map(w => `<option value="${w.id}">✓ ${w.name}</option>`);
+    const otherOptions = ALL_WALLETS
+      .filter(w => !installedIds.has(w.id))
+      .map(w => `<option value="${w.id}">${w.name}</option>`);
+
+    if (detectedOptions.length === 0 && otherOptions.length === 0) {
+      walletSelect.innerHTML = '<option value="">No wallets available</option>';
+    } else if (detectedOptions.length > 0 && otherOptions.length > 0) {
+      walletSelect.innerHTML =
+        detectedOptions.join('') +
+        '<option disabled>── other ──</option>' +
+        otherOptions.join('');
+    } else {
+      walletSelect.innerHTML = (detectedOptions.concat(otherOptions)).join('');
+    }
+
+    function setStatus(id, msg, cls = '') {
+      const el = document.getElementById(id);
+      el.textContent = msg;
+      el.className = `status ${cls}`;
+    }
+
+    // ── 3. Connect wallet ───────────────────────────────────────────────────
+    document.getElementById('connectBtn').onclick = async () => {
+      const walletType = walletSelect.value;
+      if (!walletType) return;
+      try {
+        setStatus('walletStatus', 'Connecting…');
+        await Nexus.connectWallet(walletType);
+        const st = Nexus.getWalletState();
+        setStatus('walletStatus', `Connected: ${st?.paymentAddress || st?.address}`, 'ok');
+        document.getElementById('loadBtn').disabled = false;
+        document.getElementById('buyBtn').disabled = false;
+      } catch (e) {
+        setStatus('walletStatus', `Error: ${e?.message || e}`, 'err');
+      }
+    };
+
+    // ── 4. Load all bitmap listings for sale ────────────────────────────────
+    //  SDK method: sdk.indexCollectionListings('bitmap')
+    //  Returns an array of listing objects:
+    //    { inscriptionId, price, revealTxid, collectionKey, ... }
+    document.getElementById('loadBtn').onclick = async () => {
+      try {
+        setStatus('loadStatus', 'Scanning chain for bitmap listings…');
+
+        // indexCollectionListings lives on the inner OordinalsSDK instance
+        const listings = await Nexus.sdk.indexCollectionListings('bitmap');
+        // listings is already sorted by recency; filter out sold/invalid entries
+        const active = listings.filter(l => l.price != null && l.price > 0);
+
+        if (active.length === 0) {
+          setStatus('loadStatus', 'No active bitmap listings found.', '');
+          return;
+        }
+
+        setStatus('loadStatus', `Found ${active.length} bitmap(s) for sale.`, 'ok');
+
+        // Render table
+        const tbody = document.getElementById('listingsTbody');
+        tbody.innerHTML = '';
+        for (const listing of active) {
+          const tr = document.createElement('tr');
+          tr.className = 'clickable';
+          tr.innerHTML = `
+            <td style="font-family:monospace">${listing.inscriptionId.slice(0, 14)}…</td>
+            <td>${Number(listing.price).toLocaleString()} sats</td>
+            <td><button class="selectBtn" data-id="${listing.inscriptionId}">Select</button></td>
+          `;
+          // Click row OR button to auto-fill buy target
+          const fill = () => {
+            document.getElementById('buyTarget').value = listing.inscriptionId;
+            setStatus('buyStatus', `Selected: ${listing.inscriptionId.slice(0, 20)}…`, 'ok');
+          };
+          tr.onclick = fill;
+          tbody.appendChild(tr);
+        }
+        document.getElementById('listingsTable').style.display = '';
+      } catch (e) {
+        setStatus('loadStatus', `Load failed: ${e?.message || e}`, 'err');
+      }
+    };
+
+    // ── 5. Buy a bitmap ─────────────────────────────────────────────────────
+    document.getElementById('buyBtn').onclick = async () => {
+      const inscriptionId = document.getElementById('buyTarget').value.trim();
+      const feeRate = Number(document.getElementById('feeRate').value || 10);
+
+      if (!inscriptionId) {
+        setStatus('buyStatus', 'Select a listing first.', 'err');
+        return;
+      }
+
+      try {
+        const st = Nexus.getWalletState();
+        const paymentAddress  = st?.paymentAddress || st?.address;
+        const ordinalsAddress = st?.ordinalsAddress || st?.address;
+
+        if (!paymentAddress) {
+          setStatus('buyStatus', 'Connect wallet first.', 'err');
+          return;
+        }
+
+        setStatus('buyStatus', 'Fetching UTXOs…');
+        const buyerPaymentUtxos = await Nexus.getSpendableUtxos([paymentAddress]);
+
+        setStatus('buyStatus', 'Sign the purchase in your wallet…');
+        const res = await Nexus.buyFromInscriptionId({
+          inscriptionId,
+          buyerPaymentUtxos,
+          buyerChangeAddress:  paymentAddress,
+          buyerReceiveAddress: ordinalsAddress,
+          feeRateSatPerVb: feeRate,
+          broadcast: true,
+        });
+
+        setStatus('buyStatus', `Purchased! txid: ${res?.txid}`, 'ok');
+      } catch (e) {
+        setStatus('buyStatus', `Buy failed: ${e?.message || e}`, 'err');
+      }
+    };
+  </script>
+</body>
+</html>
