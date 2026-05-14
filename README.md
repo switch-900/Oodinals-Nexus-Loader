@@ -142,15 +142,92 @@ await Nexus.createInscription({
 });
 ```
 
-### Parent-child inscriptions
+### Create inscription chains (existing parent -> child -> grandchildren)
+
+Use `parentIds` to link a new inscription to an existing parent inscription.
+
+Important:
+
+- A parent id must be a full inscription id, e.g. `<txid>i0`
+- If you set `defaults.parentIds`, every item inherits it unless the item sets its own `parentIds`
+- To create a chain, use the inscription id returned from one step as the parent in the next step
+
+#### Step 1: You already have a parent inscription
+
+```js
+const existingParentId = '<existing-parent-txid>i0';
+```
+
+#### Step 2: Create a child that points to that parent
+
+```js
+const childResult = await Nexus.createInscription({
+  feeRate: 10,
+  defaults: {
+    parentIds: [existingParentId]
+  },
+  items: [{
+    content: 'Child of existing parent',
+    contentType: 'text/plain'
+  }]
+});
+
+const childId = childResult.revealTxIds?.[0]
+  ? `${childResult.revealTxIds[0]}i0`
+  : null;
+
+if (!childId) throw new Error('Could not derive child inscription id');
+```
+
+#### Step 3: Create grandchildren that point to that child
+
+```js
+const grandchildResult = await Nexus.createInscription({
+  feeRate: 10,
+  defaults: {
+    parentIds: [childId]
+  },
+  items: [
+    { content: 'Grandchild A', contentType: 'text/plain' },
+    { content: 'Grandchild B', contentType: 'text/plain' }
+  ]
+});
+
+console.log('Grandchildren reveal txids:', grandchildResult.revealTxIds);
+```
+
+#### Single-call example (multiple children of one parent)
 
 ```js
 await Nexus.createInscription({
   feeRate: 10,
   defaults: {
-    parentIds: ['<parent-inscription-id>']
+    parentIds: ['<existing-parent-txid>i0']
   },
-  items: [{ content: 'Child inscription', contentType: 'text/plain' }]
+  items: [
+    { content: 'Child 1', contentType: 'text/plain' },
+    { content: 'Child 2', contentType: 'text/plain' },
+    { content: 'Child 3', contentType: 'text/plain' }
+  ]
+});
+```
+
+#### Override parent per item
+
+```js
+await Nexus.createInscription({
+  feeRate: 10,
+  defaults: {
+    parentIds: ['<default-parent-id>']
+  },
+  items: [
+    { content: 'Uses default parent', contentType: 'text/plain' },
+    {
+      content: 'Uses explicit parent',
+      contentType: 'text/plain',
+      parentIds: ['<another-parent-id>']
+    }
+  ]
 });
 ```
 
