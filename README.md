@@ -1,827 +1,1122 @@
 # Oodinals-Nexus Loader
 
-A single Bitcoin inscription that gives you wallets, inscriptions, marketplace, and UTXOs.
+A single on-chain Bitcoin loader for wallet connectivity, inscription creation, UTXO helpers, marketplace functions, collections, and chain/tree orchestration.
 
-**Sat:** `534764996708771`
+**Loader sat:** `534764996708771`
 
 ```js
 const { default: Nexus } = await import('/r/sat/534764996708771/at/-1/content');
 ```
 
-No npm. No build tools. No dependencies to manage. One import and you're ready.
+No npm. No build step. No package manager.
 
 ---
 
-## How It Works
+## How it works
 
-The Loader is an ES module inscribed on Bitcoin. When you import it, it automatically loads five on-chain dependencies (SHA256, secp256k1, SDK, Core, WalletConnect), initializes the Bitcoin library, and exports a ready-to-use `Nexus` object.
+The Loader is an ES module inscribed on Bitcoin. Importing it loads the on-chain dependency stack and exposes a ready-to-use `Nexus` object.
 
-All URLs are root-relative (`/r/sat/...`) so they work on ordinals.com or any reverse proxy that serves the same paths.
+For on-chain applications, prefer root-relative paths:
+
+```text
+/content/<inscription-id>
+/r/...
+/r/sat/<sat>/at/-1/content
+```
+
+Do not hard-code `ordinals.com`, `0rdinals.com`, UniSat, or another explorer when the same resource is available from the current compatible host.
 
 ---
-  ## ⚠️ Chain Inscription Caveats: True On-Chain Parent-Child Links
 
-  When building parent-child chains, it is critical to understand how on-chain relationships are enforced:
+## Import
 
-  - **Only one true parent-child link per batch:**
-    - When you batch multiple items in a single `createInscription()` call, only the first item can use the parent UTXO as its input. The rest will have the parent tag in their envelope, but will not be true on-chain children (their reveal tx will not spend the parent UTXO).
-  - **For a real chain, inscribe one at a time:**
-    - To create a true chain (parent → child → grandchild), you must inscribe each child in sequence, one at a time, waiting for each reveal txid before proceeding.
-    - Each new inscription must use the previous inscription’s UTXO as its parent input.
-  - **How to do it:**
-    1. Create the first inscription (parent).
-    2. Wait for confirmation (or at least for the reveal txid).
-    3. Use the new inscription’s UTXO as the parent for the next inscription (child).
-    4. Repeat for each link in the chain.
-  - **If you batch:** Only the first item in the batch will be a true on-chain child; the rest will only have a parent tag in metadata.
+### From an on-chain page
 
-  **Example: True Chain (one at a time)**
+```html
+<script type="module">
+  const { default: Nexus } =
+    await import('/r/sat/534764996708771/at/-1/content');
+</script>
+```
 
-  ```js
-  // Step 1: Create parent
-  const parentRes = await Nexus.createInscription({ ... });
-  const parentId = parentRes.revealTxIds[0] + 'i0';
+### Named exports
 
-  // Step 2: Create child (spends parent UTXO)
-  const childRes = await Nexus.createInscription({
-    defaults: { parentIds: [parentId] },
-    items: [{ ... }]
-  });
-  const childId = childRes.revealTxIds[0] + 'i0';
+```js
+const {
+  default: Nexus,
+  NexusWalletConnect
+} = await import('/r/sat/534764996708771/at/-1/content');
+```
 
-  // Step 3: Create grandchild (spends child UTXO)
-  const grandchildRes = await Nexus.createInscription({
-    defaults: { parentIds: [childId] },
-    items: [{ ... }]
-  });
-  ```
+`Nexus` is also exposed on `window.Nexus` by the current loader.
 
-  **Summary:**
-  - For true on-chain parent-child chains, always inscribe one at a time, using the previous inscription’s UTXO as the parent for the next.
-  - Batching is only for convenience when you do not need real on-chain chaining.
+### Sat-latest vs immutable pin
 
-  # Oodinals-Nexus Loader
+Latest inscription on the loader sat:
 
-  A single Bitcoin inscription that gives you wallets, inscriptions, marketplace, and UTXOs.
+```js
+const { default: Nexus } =
+  await import('/r/sat/534764996708771/at/-1/content');
+```
 
-  **Sat:** `534764996708771`
+Immutable pin:
 
-  ```js
-  const { default: Nexus } = await import('/r/sat/534764996708771/at/-1/content');
-  ```
+```js
+const { default: Nexus } =
+  await import('/content/<loader-inscription-id>');
+```
 
-  No npm. No build tools. No dependencies to manage. One import and you're ready.
+Use sat-latest when you want upgrades. Pin an exact inscription when reproducibility matters.
 
-  ---
+### External website
 
-  ## How It Works
+External websites can explicitly choose an Ordinals-compatible origin:
 
-  The Loader is an ES module inscribed on Bitcoin. When you import it, it automatically loads five on-chain dependencies (SHA256, secp256k1, SDK, Core, WalletConnect), initializes the Bitcoin library, and exports a ready-to-use `Nexus` object.
+```js
+window.__NEXUS_ORDINALS_ORIGIN__ = 'https://ordinals.com';
 
-  All URLs are root-relative (`/r/sat/...`) so they work on ordinals.com or any reverse proxy that serves the same paths.
+const { default: Nexus } =
+  await import('https://ordinals.com/r/sat/534764996708771/at/-1/content');
+```
 
-  ---
+This is different from an on-chain inscription, where root-relative URLs are preferred.
 
-  ## Import
+---
 
-  ### From an on-chain page (inscription or proxy)
+## Connect a wallet
 
-  ```js
-  const { default: Nexus } = await import('/r/sat/534764996708771/at/-1/content');
-  ```
+```js
+await Nexus.connectWallet('unisat');
 
-  The Loader uses a popup-proxy for API calls (UTXOs, fee rates, broadcasting) to work within ordinals.com CSP. Each API call that needs external data will briefly open a small popup window.
+const state = Nexus.getWalletState();
 
-  ### From an external site
+console.log(state.paymentAddress);
+console.log(state.ordinalsAddress);
+```
 
-  Set the origin first, then import:
+Supported wallet identifiers documented by the current loader:
 
-  ```js
-  window.__NEXUS_ORDINALS_ORIGIN__ = 'https://ordinals.com';
-  const { default: Nexus } = await import('https://ordinals.com/r/sat/534764996708771/at/-1/content');
-  ```
+```text
+unisat
+xverse
+okx
+leather
+phantom
+wizz
+oyl
+bitmapwallet
+```
 
-  ### Using the chain (sat-based flow)
+Detect installed wallets:
 
-  The recommended chain usage is sat-based imports.
+```js
+const installed = Nexus.getInstalledWallets();
+console.log(installed);
+```
 
-  1. Your app imports the Loader from its sat-latest endpoint.
-  2. The Loader then imports SDK, Core, and WalletConnect from their sat-latest endpoints.
-  3. Reinscribing a newer version on the same sat updates all consumers that use `/at/-1/content`.
+Disconnect:
 
-  ```js
-  // Loader (sat-latest)
-  const { default: Nexus } = await import('/r/sat/534764996708771/at/-1/content');
-  ```
+```js
+await Nexus.disconnect();
+```
 
-  If you need immutable behavior for compliance/audits, pin exact inscription IDs instead of sat-latest:
+### Wallet-provider injection caveat
 
-  ```js
-  // Example immutable pin (replace with your real inscription id)
-  const { default: Nexus } = await import('/content/<loader_inscription_id>');
-  ```
+Wallet extensions inject providers into the page.
 
-  Use sat-latest for fast upgrades. Use `/content/<id>` pins for strict reproducibility.
+Errors such as:
 
-  ### Named exports
+```text
+Cannot redefine property: StacksProvider
+at inpage.js
+```
 
-  ```js
-  const { default: Nexus, NexusWalletConnect } = await import('/r/sat/534764996708771/at/-1/content');
-  ```
+can be produced by competing injected wallet/provider scripts. Do not automatically treat such errors as Nexus failures. Check the source file and stack trace first.
 
-  `Nexus` is also available on `window.Nexus` after import.
+---
 
-  ---
+## Create inscriptions
 
-  ## Connect a Wallet
+### Plain text
 
-  ```js
-  const wallet = await Nexus.connectWallet('unisat');
-  // wallet.address, wallet.paymentAddress, wallet.publicKey, ...
-  ```
+Pass plain text as plain text:
 
-  Supported wallets: `unisat`, `xverse`, `okx`, `leather`, `phantom`, `wizz`, `oyl`, `bitmapwallet`
+```js
+const result = await Nexus.createInscription({
+  feeRate: 10,
+  items: [
+    {
+      content: 'Hello Bitcoin!',
+      contentType: 'text/plain;charset=utf-8'
+    }
+  ]
+});
 
-  ```js
-  // Check which wallets the user has installed
-  const installed = Nexus.getInstalledWallets();
-  // [{ id: 'unisat', name: 'UniSat', icon: '🦄' }, ...]
+console.log(result);
+```
 
-  // Get current state
-  const state = Nexus.getWalletState();
-  // { paymentAddress, ordinalsAddress, publicKey, paymentPublicKey, ... }
+Do not use `btoa()` merely because the payload is being inscribed.
 
-  // Disconnect
-  await Nexus.disconnect();
-  ```
+### Binary/base64 content
 
-  ---
+Use `contentBase64` when the payload is already represented as base64:
 
-  ## Create an Inscription
+```js
+await Nexus.createInscription({
+  feeRate: 10,
+  items: [
+    {
+      contentBase64: '<base64-encoded-png>',
+      contentType: 'image/png',
+      fileName: 'image.png'
+    }
+  ]
+});
+```
 
-  ```js
-  const result = await Nexus.createInscription({
-    feeRate: 10,
+Keep the distinction clear:
+
+```text
+content       = normal string/text payload
+contentBase64 = base64-encoded binary/base64 payload
+```
+
+### Multiple items
+
+```js
+await Nexus.createInscription({
+  feeRate: 10,
+  defaults: {
+    contentType: 'text/plain;charset=utf-8',
+    metadata: { app: 'my-app' },
+    properties: { collection: 'test' }
+  },
+  items: [
+    { content: 'First', fileName: 'one.txt' },
+    { content: 'Second', fileName: 'two.txt' },
+    { content: 'Third', fileName: 'three.txt' }
+  ]
+});
+```
+
+### Sub-1 sat/vB
+
+```js
+await Nexus.createInscription({
+  feeRate: 0.5,
+  items: [
+    {
+      content: 'Hello Bitcoin!',
+      contentType: 'text/plain;charset=utf-8'
+    }
+  ]
+});
+```
+
+### Custom fees
+
+```js
+await Nexus.createInscription({
+  feeRate: 10,
+  fees: {
+    developer: {
+      enabled: true,
+      address: 'bc1p...',
+      amountSats: 1000
+    },
+    customFees: [
+      {
+        address: 'bc1p...',
+        amountSats: 500,
+        description: 'Label'
+      }
+    ]
+  },
+  items: [
+    {
+      content: 'Hello!',
+      contentType: 'text/plain'
+    }
+  ]
+});
+```
+
+### Platform fee override
+
+The current API documentation supports overriding or disabling the platform fee per call:
+
+```js
+await Nexus.createInscription({
+  feeRate: 10,
+  platformFee: 5000,
+  items: [
+    {
+      content: 'Hello!',
+      contentType: 'text/plain'
+    }
+  ]
+});
+```
+
+Disable for one call:
+
+```js
+await Nexus.createInscription({
+  feeRate: 10,
+  platformFee: 0,
+  items: [
+    {
+      content: 'Hello!',
+      contentType: 'text/plain'
+    }
+  ]
+});
+```
+
+If your application depends on a particular fee constant, confirm the deployed loader version rather than assuming a long-lived hard-coded value.
+
+---
+
+## Parent-child inscriptions
+
+`parentIds` associates a new inscription with parent inscription IDs.
+
+A parent ID must be a complete inscription ID:
+
+```text
+<64-hex-txid>i0
+```
+
+Sequential example:
+
+```js
+const parentResult = await Nexus.createInscription({
+  feeRate: 10,
+  items: [
+    {
+      content: 'Parent',
+      contentType: 'text/plain'
+    }
+  ]
+});
+
+const parentId =
+  `${parentResult.revealTxIds[0]}i0`;
+
+const childResult = await Nexus.createInscription({
+  feeRate: 10,
+  defaults: {
+    parentIds: [parentId]
+  },
+  items: [
+    {
+      content: 'Child',
+      contentType: 'text/plain'
+    }
+  ]
+});
+
+const childId =
+  `${childResult.revealTxIds[0]}i0`;
+
+await Nexus.createInscription({
+  feeRate: 10,
+  defaults: {
+    parentIds: [childId]
+  },
+  items: [
+    {
+      content: 'Grandchild',
+      contentType: 'text/plain'
+    }
+  ]
+});
+```
+
+### Parent metadata vs true transaction linkage
+
+A parent tag and a transaction that actually spends the parent UTXO are not automatically the same thing.
+
+If your design requires a true parent-UTXO relationship, ensure the transaction construction actually uses the intended parent UTXO.
+
+Do not assume that putting one `parentIds` value on several batched items gives every item an independent true parent spend.
+
+---
+
+## Chain and tree orchestration
+
+The current loader documents:
+
+```text
+createInscriptionTree(opts)
+createInscriptionChain(opts)
+```
+
+Tree/DAG example:
+
+```js
+await Nexus.connectWallet('unisat');
+
+const nodes = [
+  {
+    id: 'profile',
     items: [
       {
-        content: 'Hello Bitcoin!',
+        content: 'Profile',
         contentType: 'text/plain'
       }
     ]
-  });
-
-  console.log(result.commitTxId);
-  console.log(result.revealTxIds);
-  ```
-
-  ### Multiple items
-
-  ```js
-  await Nexus.createInscription({
-    feeRate: 10,
-    defaults: {
-      contentType: 'text/plain',
-      metadata: { app: 'my-app' },
-      properties: { collection: 'test' }
-    },
+  },
+  {
+    id: 'branchA',
+    parent: 'profile',
     items: [
-      { content: 'First', fileName: 'one.txt' },
-      { content: 'Second', fileName: 'two.txt' },
-      { content: 'Third', fileName: 'three.txt' }
-    ]
-  });
-  ```
-
-  ### Base64 content (images, binary)
-
-  ```js
-  await Nexus.createInscription({
-    feeRate: 10,
-    items: [{
-      contentBase64: '<base64-encoded-data>',
-      contentType: 'image/png'
-    }]
-  });
-  ```
-
-  ### Create inscription chains (existing parent -> child -> grandchildren)
-
-  Use `parentIds` to link a new inscription to an existing parent inscription.
-
-  Important:
-
-  - A parent id must be a full inscription id, e.g. `<txid>i0`
-  - If you set `defaults.parentIds`, every item inherits it unless the item sets its own `parentIds`
-  - To create a chain, use the inscription id returned from one step as the parent in the next step
-
-  #### Step 1: You already have a parent inscription
-
-  ```js
-  const existingParentId = '<existing-parent-txid>i0';
-  ```
-
-  #### Step 2: Create a child that points to that parent
-
-  ```js
-  const childResult = await Nexus.createInscription({
-    feeRate: 10,
-    defaults: {
-      parentIds: [existingParentId]
-    },
-    items: [{
-      content: 'Child of existing parent',
-      contentType: 'text/plain'
-    }]
-  });
-
-  const childId = childResult.revealTxIds?.[0]
-    ? `${childResult.revealTxIds[0]}i0`
-    : null;
-
-  if (!childId) throw new Error('Could not derive child inscription id');
-  ```
-
-  #### Step 3: Create grandchildren that point to that child
-
-  ```js
-  const grandchildResult = await Nexus.createInscription({
-    feeRate: 10,
-    defaults: {
-      parentIds: [childId]
-    },
-    items: [
-      { content: 'Grandchild A', contentType: 'text/plain' },
-      { content: 'Grandchild B', contentType: 'text/plain' }
-    ]
-  });
-
-  console.log('Grandchildren reveal txids:', grandchildResult.revealTxIds);
-  ```
-
-  #### Single-call example (multiple children of one parent)
-
-  ```js
-  await Nexus.createInscription({
-    feeRate: 10,
-    defaults: {
-      parentIds: ['<existing-parent-txid>i0']
-    },
-    items: [
-      { content: 'Child 1', contentType: 'text/plain' },
-      { content: 'Child 2', contentType: 'text/plain' },
-      { content: 'Child 3', contentType: 'text/plain' }
-    ]
-  });
-  ```
-
-  #### Override parent per item
-
-  ```js
-  await Nexus.createInscription({
-    feeRate: 10,
-    defaults: {
-      parentIds: ['<default-parent-id>']
-    },
-    items: [
-      { content: 'Uses default parent', contentType: 'text/plain' },
       {
-        content: 'Uses explicit parent',
-        contentType: 'text/plain',
-        parentIds: ['<another-parent-id>']
+        content: 'Branch A',
+        contentType: 'text/plain'
       }
     ]
-  });
-  ```
-
-  ### Custom fees
-
-  ```js
-  await Nexus.createInscription({
-    feeRate: 10,
-    fees: {
-      developer: {
-        enabled: true,
-        address: 'bc1p...',
-        amountSats: 1000
-      },
-      customFees: [
-        { address: 'bc1p...', amountSats: 500, description: 'Label' }
-      ]
-    },
-    items: [{ content: 'Hello!', contentType: 'text/plain' }]
-  });
-  ```
-
-  ### Platform fee
-
-  A 2000 sat platform fee is included automatically. Override or disable per call:
-
-  ```js
-  // Override amount
-  await Nexus.createInscription({
-    feeRate: 10,
-    platformFee: 5000,
-    items: [{ content: 'Hello!', contentType: 'text/plain' }]
-  });
-
-  // Disable for this call
-  await Nexus.createInscription({
-    feeRate: 10,
-    platformFee: 0,
-    items: [{ content: 'Hello!', contentType: 'text/plain' }]
-  });
-  ```
-
-  See [PLATFORM_FEE.md](./PLATFORM_FEE.md) for full details.
-
-  ### Sub-1 fee rate
-
-  ```js
-  await Nexus.createInscription({
-    feeRate: 0.5,
-    items: [{ content: 'Hello!', contentType: 'text/plain' }]
-  });
-  ```
-
-  ---
-
-  ## Estimate Fees
-
-  Get a fee breakdown without triggering a wallet popup:
-
-  ```js
-  const estimate = await Nexus.estimateFees({
-    feeRate: 10,
-    items: [{ content: 'Hello!', contentType: 'text/plain' }]
-  });
-
-  console.log(estimate.totalRequired); // sats needed
-  console.log(estimate.commitFee);
-  console.log(estimate.revealFee);
-  ```
-
-  ---
-
-  ## Fee Rates
-
-  > **On-chain note:** `getFeeRate()` opens a proxy popup window to fetch live data. Do not call it in the same click handler as `createInscription()` — each needs its own user gesture. If you don't need live rates, just hardcode `feeRate` in your JSON config.
-
-  ```js
-  // Separate button for fee rates (needs its own click)
-  const rates = await Nexus.getFeeRates();
-  // { fast: 42, medium: 20, slow: 10, minimum: 1 }
-
-  // Single rate
-  const feeRate = await Nexus.getFeeRate('medium');
-  ```
-
-  Priority options: `'fast'`, `'medium'`, `'slow'`, `'minimum'`
-
-  ---
-
-  ## UTXOs
-
-  ```js
-  const state = Nexus.getWalletState();
-
-  // Spendable only (inscriptions/runes filtered out)
-  const utxos = await Nexus.getSpendableUtxos([state.paymentAddress]);
-
-  // All UTXOs with classification
-  const classified = await Nexus.fetchSpendableUtxos([state.paymentAddress]);
-  // classified.spendable, classified.unsafe
-
-  // Raw UTXOs (unfiltered)
-  const raw = await Nexus.fetchUtxos([state.paymentAddress]);
-  ```
-
-  ---
-
-  ## Validate JSON
-
-  Check a config before inscribing:
-
-  ```js
-  try {
-    Nexus.validateJson(jsonString);
-    console.log('Valid');
-  } catch (e) {
-    console.log('Invalid:', e.message);
+  },
+  {
+    id: 'post1',
+    parent: 'branchA',
+    items: [
+      {
+        content: 'Post 1',
+        contentType: 'text/plain'
+      }
+    ]
   }
-  ```
+];
 
-  ---
+const result = await Nexus.createInscriptionTree({
+  nodes,
+  feeRate: 10
+});
 
-  ## Marketplace
+console.log(result);
+```
 
-  ### Buy from a listing
+Runtime capability/version detection:
 
-  ```js
-  const state = Nexus.getWalletState();
-  const utxos = await Nexus.getSpendableUtxos([state.paymentAddress]);
+```js
+console.log(Nexus.getCapabilities());
+console.log(Nexus.getVersionInfo());
+```
 
-  // Buy by reveal txid
-  await Nexus.buyFromRevealTx({
-    revealTxid: '<64-hex-txid>',
-    buyerPaymentUtxos: utxos,
-    buyerChangeAddress: state.paymentAddress,
-    buyerReceiveAddress: state.ordinalsAddress,
-    feeRateSatPerVb: 10,
-    broadcast: true
-  });
+Use capability detection when following sat-latest dependencies.
 
-  // Or buy by inscription id
-  await Nexus.buyFromInscriptionId({
-    inscriptionId: '<txid>i0',
-    buyerPaymentUtxos: utxos,
-    buyerChangeAddress: state.paymentAddress,
-    buyerReceiveAddress: state.ordinalsAddress,
-    feeRateSatPerVb: 10,
-    broadcast: true
-  });
-  ```
+---
 
-  ### Sell (list) an inscription
+## Estimate fees
 
-  ```js
-  const state = Nexus.getWalletState();
-  const utxos = await Nexus.getSpendableUtxos([state.paymentAddress]);
+```js
+const estimate = await Nexus.estimateFees({
+  feeRate: 10,
+  items: [
+    {
+      content: 'Hello!',
+      contentType: 'text/plain;charset=utf-8'
+    }
+  ]
+});
 
-  const marker = Nexus.applyPlatformSellerFeeToMarker({
+console.log(estimate.totalRequired);
+console.log(estimate.commitFee);
+console.log(estimate.revealFee);
+```
+
+---
+
+## Fee rates
+
+```js
+const rates = await Nexus.getFeeRates();
+
+console.log(rates.fast);
+console.log(rates.medium);
+console.log(rates.slow);
+console.log(rates.minimum);
+```
+
+Single tier:
+
+```js
+const feeRate = await Nexus.getFeeRate('medium');
+```
+
+Documented priority names:
+
+```text
+fast
+medium
+slow
+minimum
+```
+
+### Popup/user-gesture caveat
+
+The current loader may use a popup/proxy flow for operations that require external data under inscription CSP/browser restrictions.
+
+If a method requires a popup, keep browser user-gesture restrictions in mind. Do not assume several unrelated popup-requiring actions can be triggered later from one stale click event.
+
+---
+
+## UTXOs
+
+```js
+const state = Nexus.getWalletState();
+
+const spendable =
+  await Nexus.getSpendableUtxos([
+    state.paymentAddress
+  ]);
+```
+
+Classified:
+
+```js
+const classified =
+  await Nexus.fetchSpendableUtxos([
+    state.paymentAddress
+  ]);
+
+console.log(classified.spendable);
+console.log(classified.unsafe);
+```
+
+Raw:
+
+```js
+const raw =
+  await Nexus.fetchUtxos([
+    state.paymentAddress
+  ]);
+```
+
+Do not bypass inscription/rune/rare-sat classification unless you explicitly intend to spend those assets.
+
+---
+
+## Marketplace
+
+Buy by inscription ID:
+
+```js
+const state = Nexus.getWalletState();
+
+const paymentUtxos =
+  await Nexus.getSpendableUtxos([
+    state.paymentAddress
+  ]);
+
+await Nexus.buyFromInscriptionId({
+  inscriptionId: '<txid>i0',
+  buyerPaymentUtxos: paymentUtxos,
+  buyerChangeAddress: state.paymentAddress,
+  buyerReceiveAddress: state.ordinalsAddress,
+  feeRateSatPerVb: 10,
+  broadcast: true
+});
+```
+
+Buy by reveal transaction ID:
+
+```js
+await Nexus.buyFromRevealTx({
+  revealTxid: '<64-hex-txid>',
+  buyerPaymentUtxos: paymentUtxos,
+  buyerChangeAddress: state.paymentAddress,
+  buyerReceiveAddress: state.ordinalsAddress,
+  feeRateSatPerVb: 10,
+  broadcast: true
+});
+```
+
+Create a listing:
+
+```js
+const marker =
+  Nexus.applyPlatformSellerFeeToMarker({
     parentInscriptionId: '<inscription-id>',
     sellerAddress: state.paymentAddress,
     priceSats: BigInt(50000)
   });
 
-  await Nexus.sellWith3TxFlow({
-    parentUtxo: { txid: '...', vout: 0, value: 546, address: state.ordinalsAddress },
-    fundingUtxo: utxos[0],
-    fundingUtxos: utxos,
-    sellerChangeAddress: state.paymentAddress,
-    feeRateSatPerVb: 10,
-    marker,
-    broadcast: true,
-    oodlFeeAddress: 'bc1p...',
-    oodlFeeSats: 600
-  });
-  ```
+await Nexus.sellWith3TxFlow({
+  parentUtxo: {
+    txid: '...',
+    vout: 0,
+    value: 546,
+    address: state.ordinalsAddress
+  },
+  fundingUtxo: paymentUtxos[0],
+  fundingUtxos: paymentUtxos,
+  sellerChangeAddress: state.paymentAddress,
+  feeRateSatPerVb: 10,
+  marker,
+  broadcast: true,
+  oodlFeeAddress: 'bc1p...',
+  oodlFeeSats: 600
+});
+```
 
-  ### Index listings
+Marketplace client:
 
-  ```js
-  const mp = Nexus.createMarketplaceClient({
+```js
+const marketplace =
+  Nexus.createMarketplaceClient({
     marketplaceFeeAddress: 'bc1p...',
     marketplaceFeeSats: 600
   });
 
-  const page = await mp.getListingsPage({ pageSize: 25, cursorTxid: null });
-  console.log(page.listings);
-  console.log(page.nextCursorTxid); // pass to next call to paginate
-  ```
+const page =
+  await marketplace.getListingsPage({
+    pageSize: 25,
+    cursorTxid: null
+  });
 
-  ---
+console.log(page.listings);
+console.log(page.nextCursorTxid);
+```
 
-  ## Collections
+---
 
-  ```js
-  await Nexus.loadCollectionsRegistry();
+## Collections
 
-  const collection = await Nexus.matchCollectionForInscription('<inscription-id>');
-  // returns collection key or null
-  ```
+```js
+await Nexus.loadCollectionsRegistry();
 
-  ---
+const collection =
+  await Nexus.matchCollectionForInscription(
+    '<inscription-id>'
+  );
 
-  ## Chain Tree (single wallet prompt)
+console.log(collection);
+```
 
-  If you need a true parent-child tree and want to sign everything in one wallet approval flow, use the chain tree coordinator flow in the SDK/core stack instead of multiple separate `createInscription()` calls.
+`bitmap-onchain-marketpace-example.html` is a marketplace example. It should not be treated as the canonical definition of Bitmap first-claim validity.
 
-  What this gives you:
+---
 
-  - Pre-computes a full DAG (parent -> child -> grandchildren)
-  - Uses predicted reveal txids to wire in-tree parent links before signing
-  - Signs all required PSBTs in one wallet signing session
-  - Broadcasts in topological order so parents are submitted before children
+## JSON configuration
 
-  Important:
+The current documented shape includes:
 
-  - This is one signing flow, not one transaction
-  - External parent IDs must still resolve to current UTXOs
-  - If an external parent cannot be resolved, the tree should fail instead of silently continuing
-
-
-  ### Loader now supports chain tree orchestration
-
-  The inscribed `Nexus` loader now exposes advanced orchestration methods:
-
-  - `createInscriptionTree(opts)`: Create a full parent-child DAG (tree) in a single wallet prompt and signing session.
-  - `createInscriptionChain(opts)`: Create a parent + N children chain in one call (CPFP-linked, not DAG).
-  - `getCapabilities()`: Returns a capabilities object for runtime feature detection.
-  - `getVersionInfo()`: Returns loader and dependency version info for diagnostics.
-
-  **Example: Create a chain tree in one prompt**
-
-  ```js
-  // Connect wallet first
-  await Nexus.connectWallet('unisat');
-
-  // Build your node tree (DAG)
-  const nodes = [
-    { id: 'profile', items: [{ content: 'Profile', contentType: 'text/plain' }] },
-    { id: 'branchA', parent: 'profile', items: [{ content: 'Branch A', contentType: 'text/plain' }] },
-    { id: 'branchB', parent: 'profile', items: [{ content: 'Branch B', contentType: 'text/plain' }] },
-    { id: 'post1', parent: 'branchA', items: [{ content: 'Post 1', contentType: 'text/plain' }] },
-    { id: 'post2', parent: 'branchB', items: [{ content: 'Post 2', contentType: 'text/plain' }] }
-  ];
-
-  // Create the full tree in one wallet popup
-  const result = await Nexus.createInscriptionTree({ nodes, feeRate: 10 });
-  console.log(result);
-  ```
-
-  The loader auto-populates wallet context for tree/chain calls after `connectWallet()`:
-
-  - spendable payment UTXOs
-  - change address
-  - payment and ordinals public keys
-
-  You can still override these via `extraBatchOptions` when needed.
-
-  **Runtime capability/version check**
-
-  ```js
-  const caps = Nexus.getCapabilities();
-  // { createInscription: true, createInscriptionTree: true, ... }
-  const versions = Nexus.getVersionInfo();
-  // { loaderSat, sdkSat, coreSat, ... }
-  ```
-
-  ### When to use what
-
-  - Use `createInscriptionTree()` for dependency graphs and single signing flow (DAG/chain tree)
-  - Use `createInscriptionChain()` for parent + N children (CPFP-linked, not DAG)
-  - Use `createInscription()` for simple standalone inscriptions or manual sequential steps
-
-  ---
-
-  ## JSON Config Reference
-
-  The JSON object passed to `createInscription()` and `estimateFees()`:
-
-  ```json
-  {
-    "feeRate": 10,
-    "network": "mainnet",
-    "platformFee": 2000,
-    "platformFeeAddress": "bc1p...",
-    "fees": {
-      "developer": {
-        "enabled": false,
-        "address": "bc1p...",
-        "amountSats": 1000
-      },
-      "customFees": [
-        { "address": "bc1p...", "amountSats": 500, "description": "Label" }
-      ]
+```json
+{
+  "feeRate": 10,
+  "network": "mainnet",
+  "platformFee": 2000,
+  "platformFeeAddress": "bc1p...",
+  "fees": {
+    "developer": {
+      "enabled": false,
+      "address": "bc1p...",
+      "amountSats": 1000
     },
-    "defaults": {
+    "customFees": [
+      {
+        "address": "bc1p...",
+        "amountSats": 500,
+        "description": "Label"
+      }
+    ]
+  },
+  "defaults": {
+    "contentType": "text/plain",
+    "metaprotocol": "",
+    "metadata": {},
+    "properties": {},
+    "postage": 546,
+    "parentIds": [],
+    "contentEncoding": ""
+  },
+  "items": [
+    {
+      "content": "Hello!",
       "contentType": "text/plain",
-      "metaprotocol": "",
+      "fileName": "hello.txt",
+      "contentBase64": null,
+      "recipientAddress": null,
+      "pointer": null,
+      "delegateId": null,
+      "parentIds": [],
       "metadata": {},
       "properties": {},
       "postage": 546,
-      "parentIds": [],
-      "contentEncoding": ""
-    },
-    "items": [
-      {
-        "content": "Hello!",
-        "contentType": "text/plain",
-        "fileName": "hello.txt",
-        "contentBase64": null,
-        "recipientAddress": null,
-        "pointer": null,
-        "delegateId": null,
-        "parentIds": [],
-        "metadata": {},
-        "properties": {},
-        "postage": 546,
-        "repeatCount": 1
+      "repeatCount": 1
+    }
+  ]
+}
+```
+
+Minimal text:
+
+```json
+{
+  "items": [
+    {
+      "content": "Hello from Nexus",
+      "contentType": "text/plain"
+    }
+  ]
+}
+```
+
+Minimal binary/base64:
+
+```json
+{
+  "items": [
+    {
+      "contentBase64": "iVBORw0KGgoAAAANSUhEUgAA...",
+      "contentType": "image/png"
+    }
+  ]
+}
+```
+
+Validation:
+
+```js
+try {
+  Nexus.validateJson(jsonString);
+  console.log('Valid');
+} catch (error) {
+  console.error('Invalid:', error.message);
+}
+```
+
+---
+
+# On-chain runtime and recursive content
+
+This section records behaviour that matters when using Nexus in inscriptions, explorers, galleries, and recursive applications.
+
+## Preserve the current host
+
+Prefer:
+
+```js
+fetch('/r/blockheight');
+fetch('/r/inscription/<id>');
+fetch('/content/<id>');
+```
+
+over hard-coded explorer domains.
+
+This keeps the application portable across compatible host environments.
+
+## Preserve the real `/content/<id>` execution URL
+
+Recursive HTML applications may inspect:
+
+```js
+location.href
+location.pathname
+document.baseURI
+```
+
+and may do:
+
+```js
+new URL('/content/<id>', location.href);
+```
+
+Running such an app from a synthetic URL such as:
+
+```text
+about:srcdoc
+```
+
+can break URL resolution, self-reference, recursive fetches, and module/resource loading.
+
+For active recursive HTML, prefer execution from the real:
+
+```text
+/content/<inscription-id>
+```
+
+URL.
+
+## MIME types need deliberate rendering
+
+Do not send every content type through one generic iframe.
+
+Recommended model:
+
+| Content | Preferred handling |
+|---|---|
+| PNG/JPEG/GIF/WebP/APNG/AVIF/JXL | `<img>` |
+| static SVG thumbnail | `<img src="/content/<id>">` |
+| active/document SVG | sandboxed document |
+| HTML/XHTML | sandboxed document |
+| text/JSON/XML/YAML/TOML/JS | readable text renderer |
+| video | `<video>` |
+| audio | `<audio>` |
+| PDF | document/PDF frame |
+| font | explicit font handling/fallback |
+| model | explicit model handling/fallback |
+| unknown binary | safe raw-content fallback |
+
+## SVG is not always a passive image
+
+`image/svg+xml` can contain:
+
+- scripts
+- event handlers
+- `foreignObject`
+- imports
+- external references
+- CSS/resource URLs
+
+For thumbnails, an `<img>` context is useful because scripts do not execute.
+
+For an interactive full document, use a deliberate sandboxed document context.
+
+## Sandbox trade-off
+
+Active inscription HTML should be isolated.
+
+Be careful with:
+
+```text
+sandbox="allow-scripts allow-same-origin"
+```
+
+for same-origin untrusted inscription content.
+
+Adding `allow-same-origin` just to fix recursion can materially weaken the isolation boundary.
+
+---
+
+# Bitmap protocol notes
+
+These rules matter for any Bitmap-aware Nexus application, indexer, marketplace, or renderer.
+
+## Target block vs claim block
+
+For:
+
+```text
+N.bitmap
+```
+
+`N` is the Bitcoin block being represented.
+
+It is **not necessarily** the block in which the inscription was mined.
+
+Keep these values separate:
+
+```text
+target block = N
+claim block  = H
+```
+
+Example:
+
+```text
+969422.bitmap
+```
+
+can be mined in block:
+
+```text
+969426
+```
+
+but its geometry must still be generated from **Bitcoin block 969422**.
+
+Do not render block `969426` merely because that is where the inscription was found.
+
+## First-claim verification
+
+For candidate `N.bitmap` found in block `H`:
+
+### H < N
+
+Invalid.
+
+The target block did not yet exist.
+
+### H = N
+
+The first same-block candidate can be accepted under the loaded-chain verification model.
+
+There is no eligible earlier block to search because `N.bitmap` cannot validly precede block `N`.
+
+### H > N
+
+Inspect every block:
+
+```text
+N
+N + 1
+...
+H - 1
+```
+
+If an earlier `N.bitmap` exists, the candidate in `H` is not first.
+
+If one or more required blocks have not been inspected, the state is:
+
+```text
+pending / unverified
+```
+
+not valid.
+
+If the full proof window is known and contains no earlier claim, the candidate can become:
+
+```text
+valid / first proven claim
+```
+
+## Never search below N
+
+The Bitmap proof window begins at the target block `N`.
+
+Do not scan genesis through `N - 1` for an `N.bitmap` claim.
+
+## Same-block duplicates
+
+Preserve transaction/inscription ordering. If several `N.bitmap` claims occur in the same block, only the first relevant occurrence can be the first same-block candidate.
+
+## Verification and rendering are separate
+
+Do not conflate:
+
+```text
+verify candidate in claim block H
+render geometry from target block N
+```
+
+The claim block proves where the candidate appeared.
+
+The target block supplies the transaction/output geometry used by the Bitmap renderer.
+
+## Cache both heights
+
+Bitmap cache/index data should preserve:
+
+```text
+claim inscription ID
+claim block H
+target block N
+validation state
+```
+
+Do not store one ambiguous `height` and reuse it for both verification and rendering.
+
+---
+
+# Debugging embedded/on-chain applications
+
+Browser console errors may come from:
+
+1. Nexus or your outer application
+2. the embedded inscription
+3. wallet/browser extensions
+4. injected provider scripts
+5. a third-party API used by the embedded inscription
+
+## Wallet/provider example
+
+```text
+TypeError: Cannot redefine property: StacksProvider
+at inpage.js
+```
+
+This can come from wallet/provider injection conflicts rather than Nexus.
+
+## Embedded API example
+
+```text
+mempool.space returned 400
+at btcapi.js
+```
+
+If `btcapi.js` belongs to the embedded inscription, the failing request is being made by that embedded app, not automatically by the outer Nexus application.
+
+Inspect the stack trace before changing Nexus code.
+
+Useful checks:
+
+```js
+console.log(location.href);
+console.log(location.pathname);
+console.log(document.baseURI);
+```
+
+Host endpoint:
+
+```js
+console.log(
+  await fetch('/r/blockheight')
+    .then(r => r.text())
+);
+```
+
+Content endpoint:
+
+```js
+const response =
+  await fetch('/content/<inscription-id>');
+
+console.log(
+  response.status,
+  response.headers.get('content-type')
+);
+```
+
+---
+
+## Method reference
+
+| Method | Description |
+|---|---|
+| `connectWallet(type)` | Connect wallet |
+| `disconnect()` | Disconnect wallet |
+| `getWalletState()` | Current wallet state |
+| `getInstalledWallets()` | Detected wallet extensions |
+| `createInscription(config)` | Create inscription(s) |
+| `createInscriptionTree(opts)` | Tree/DAG orchestration |
+| `createInscriptionChain(opts)` | Chain orchestration |
+| `estimateFees(config)` | Estimate inscription fees |
+| `validateJson(config)` | Validate config |
+| `getCapabilities()` | Runtime capability detection |
+| `getVersionInfo()` | Version diagnostics |
+| `getFeeRates(network?)` | Fee-rate tiers |
+| `getFeeRate(priority?, network?)` | Selected fee rate |
+| `getSpendableUtxos(addresses)` | Spendable UTXOs |
+| `fetchSpendableUtxos(addresses?)` | Classified UTXOs |
+| `fetchUtxos(addresses?)` | Raw UTXOs |
+| `createMarketplaceClient(config)` | Marketplace client |
+| `buyFromRevealTx(params)` | Buy by reveal txid |
+| `buyFromInscriptionId(params)` | Buy by inscription ID |
+| `sellWith3TxFlow(params)` | Listing/sale flow |
+| `applyPlatformSellerFeeToMarker(params)` | Build listing/seller marker |
+| `loadCollectionsRegistry()` | Load collection registry |
+| `matchCollectionForInscription(id)` | Match inscription to collection |
+
+---
+
+## Minimal full example
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  >
+  <title>Nexus Demo</title>
+</head>
+<body>
+  <button id="connect">Connect Wallet</button>
+  <button id="inscribe" disabled>Inscribe</button>
+  <pre id="out">Loading Nexus…</pre>
+
+  <script type="module">
+    const { default: Nexus } =
+      await import(
+        '/r/sat/534764996708771/at/-1/content'
+      );
+
+    const out =
+      document.getElementById('out');
+
+    const connect =
+      document.getElementById('connect');
+
+    const inscribe =
+      document.getElementById('inscribe');
+
+    out.textContent =
+      'Ready. Connect a wallet.';
+
+    connect.onclick = async () => {
+      try {
+        await Nexus.connectWallet('unisat');
+
+        const state =
+          Nexus.getWalletState();
+
+        out.textContent =
+          `Connected: ${state.ordinalsAddress}`;
+
+        inscribe.disabled = false;
+      } catch (error) {
+        out.textContent =
+          `Error: ${error.message}`;
       }
-    ]
-  }
-  ```
+    };
 
-  ### Complete example (all options)
-
-  ```json
-  {
-    "feeRate": 12.5,
-    "network": "mainnet",
-    "platformFee": 2500,
-    "platformFeeAddress": "bc1pqu9t32xuc3kdl2lxnfvgf5tkgmssee450lhepw60yfzv2sga7f0q6jkejr",
-    "fees": {
-      "developer": {
-        "enabled": true,
-        "address": "bc1pdevfeeaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-        "amountSats": 1200
-      },
-      "customFees": [
-        {
-          "address": "bc1pcustomfeeaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-          "amountSats": 600,
-          "description": "Platform fee"
-        },
-        {
-          "address": "bc1paffiliatefeeaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-          "amountSats": 300,
-          "description": "Affiliate fee"
-        }
-      ]
-    },
-    "defaults": {
-      "contentType": "text/plain;charset=utf-8",
-      "metaprotocol": "oodl",
-      "metadata": {
-        "app": "nexus-demo",
-        "version": "1.0.0"
-      },
-      "properties": {
-        "collection": "demo-collection",
-        "env": "prod"
-      },
-      "postage": 546,
-      "parentIds": [
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaai0"
-      ],
-      "contentEncoding": ""
-    },
-    "items": [
-      {
-        "content": "Hello from Oodinals-Nexus",
-        "contentType": "text/plain",
-        "fileName": "hello.txt",
-        "contentBase64": null,
-        "recipientAddress": "bc1precipientaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-        "pointer": "0",
-        "delegateId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbi0",
-        "parentIds": [
-          "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci0"
-        ],
-        "metadata": {
-          "name": "hello-item",
-          "type": "text"
-        },
-        "properties": {
-          "tier": "gold",
-          "index": 1
-        },
-        "postage": 1000,
-        "repeatCount": 2
-      },
-      {
-        "content": null,
-        "contentType": "image/png",
-        "fileName": "image.png",
-        "contentBase64": "iVBORw0KGgoAAAANSUhEUgAA...",
-        "recipientAddress": null,
-        "pointer": null,
-        "delegateId": null,
-        "parentIds": [],
-        "metadata": {
-          "name": "image-item"
-        },
-        "properties": {
-          "category": "media"
-        },
-        "postage": 546,
-        "repeatCount": 1
-      }
-    ]
-  }
-  ```
-
-  ### Minimal valid JSON
-
-  ```json
-  {
-    "items": [
-      {
-        "content": "Hello from Nexus",
-        "contentType": "text/plain"
-      }
-    ]
-  }
-  ```
-
-  Binary-only minimal example:
-
-  ```json
-  {
-    "items": [
-      {
-        "contentBase64": "iVBORw0KGgoAAAANSUhEUgAA...",
-        "contentType": "image/png"
-      }
-    ]
-  }
-  ```
-
-  All fields except `items[].content` (or `contentBase64`) are optional. Defaults are merged into each item.
-
-  ---
-
-  ## Method Reference
-
-  | Method | Description |
-  |--------|-------------|
-  | **Wallet** | |
-  | `connectWallet(type)` | Connect a Bitcoin wallet |
-  | `disconnect()` | Disconnect wallet |
-  | `getWalletState()` | Current wallet addresses and keys |
-  | `getInstalledWallets()` | List detected wallet extensions |
-  | **Inscriptions** | |
-  | `createInscription(config)` | Create inscription(s) from JSON config |
-  | `createInscriptionTree(opts)` | Create parent-child DAG in one signing flow |
-  | `createInscriptionChain(opts)` | Create parent + N children chain in one call |
-  | `estimateFees(config)` | Fee estimate without wallet popup |
-  | `validateJson(config)` | Validate JSON config |
-  | `getCapabilities()` | Feature flags for runtime capability checks |
-  | `getVersionInfo()` | Loader + dependency version diagnostics |
-  | **Fee Rates** | |
-  | `getFeeRates(network?)` | `{ fast, medium, slow, minimum }` in sat/vB |
-  | `getFeeRate(priority?, network?)` | Single fee rate |
-  | **UTXOs** | |
-  | `getSpendableUtxos(addresses)` | Spendable UTXOs (inscriptions filtered) |
-  | `fetchSpendableUtxos(addresses)` | Classified `{ spendable, unsafe }` |
-  | `fetchUtxos(addresses)` | Raw unfiltered UTXOs |
-  | **Marketplace** | |
-  | `createMarketplaceClient(config)` | Listing indexer / paginator |
-  | `buyFromRevealTx(params)` | Buy listing by reveal txid |
-  | `buyFromInscriptionId(params)` | Buy listing by inscription id |
-  | `sellWith3TxFlow(params)` | Create a listing (3-tx flow) |
-  | `applyPlatformSellerFeeToMarker(params)` | Build sale marker with platform fee |
-  | **Collections** | |
-  | `loadCollectionsRegistry()` | Load on-chain collections registry |
-  | `matchCollectionForInscription(id)` | Match inscription to a collection |
-
-  ---
-
-  ## Minimal Full Example
-
-  ```html
-  <!DOCTYPE html>
-  <html lang="en">
-  <head><meta charset="UTF-8"><title>Nexus Demo</title></head>
-  <body>
-    <button id="connect">Connect Wallet</button>
-    <button id="inscribe" disabled>Inscribe</button>
-    <pre id="out">Loading Nexus Loader…</pre>
-
-    <script type="module">
-      const { default: Nexus } = await import('/r/sat/534764996708771/at/-1/content');
-      const out = document.getElementById('out');
-      out.textContent = 'Ready. Click Connect Wallet.';
-
-      document.getElementById('connect').onclick = async () => {
-        try {
-          out.textContent = 'Connecting…';
-          await Nexus.connectWallet('unisat');
-          out.textContent = 'Connected: ' + Nexus.getWalletState().ordinalsAddress;
-          document.getElementById('inscribe').disabled = false;
-        } catch (e) {
-          out.textContent = 'Error: ' + e.message;
-        }
-      };
-
-      document.getElementById('inscribe').onclick = async () => {
-        try {
-          out.textContent = 'Creating inscription… approve in your wallet.';
-          const result = await Nexus.createInscription({
+    inscribe.onclick = async () => {
+      try {
+        const result =
+          await Nexus.createInscription({
             feeRate: 10,
-            items: [{ content: 'Hello from Nexus!', contentType: 'text/plain' }]
+            items: [
+              {
+                content:
+                  'Hello from Nexus!',
+                contentType:
+                  'text/plain;charset=utf-8'
+              }
+            ]
           });
-          out.textContent = JSON.stringify(result, null, 2);
-        } catch (e) {
-          out.textContent = 'Error: ' + e.message;
-        }
-      };
-    </script>
-  </body>
-  </html>
-  ```
 
-  ---
+        out.textContent =
+          JSON.stringify(result, null, 2);
+      } catch (error) {
+        out.textContent =
+          `Error: ${error.message}`;
+      }
+    };
+  </script>
+</body>
+</html>
+```
 
-  ## On-Chain Dependencies
+---
 
-  The Loader imports these automatically. You never need to load them yourself.
+## On-chain dependencies
 
-  | Module | Sat | URL |
-  |--------|-----|-----|
-  | SHA256 | `1550501128239335` | `/content/c3103d5df09f16f054315bb33dbfca12e09798c5de05b1978961fa6f8600aa5ei0` (immutable) |
-  | secp256k1 | `1550501128240727` | `/content/c3103d5df09f16f054315bb33dbfca12e09798c5de05b1978961fa6f8600aa5ei1` (immutable) |
-  | SDK | `534764996708111` | `/r/sat/534764996708111/at/-1/content` |
-  | Core | `534764996708441` | `/r/sat/534764996708441/at/-1/content` |
-  | WalletConnect | `534764996703784` | `/r/sat/534764996703784/at/-1/content` |
+The current repository documents:
 
+| Module | Sat | Path |
+|---|---:|---|
+| SHA256 | `1550501128239335` | `/content/c3103d5df09f16f054315bb33dbfca12e09798c5de05b1978961fa6f8600aa5ei0` |
+| secp256k1 | `1550501128240727` | `/content/c3103d5df09f16f054315bb33dbfca12e09798c5de05b1978961fa6f8600aa5ei1` |
+| SDK | `534764996708111` | `/r/sat/534764996708111/at/-1/content` |
+| Core | `534764996708441` | `/r/sat/534764996708441/at/-1/content` |
+| WalletConnect | `534764996703784` | `/r/sat/534764996703784/at/-1/content` |
+
+---
+
+## Repository examples
+
+- `example-simple.html`
+- `example-full.html`
+- `example-marketplace.html`
+- `bitmap-onchain-marketpace-example.html`
+- `QUICK-START.md`
+
+---
+
+## Design rules
+
+1. Prefer root-relative on-chain URLs.
+2. Preserve the real `/content/<id>` execution URL for recursive HTML.
+3. Treat active HTML/SVG as untrusted document content.
+4. Render MIME types deliberately.
+5. Separate embedded-app errors from outer-app and wallet-extension errors.
+6. Never confuse a Bitmap claim block with its target block.
+7. Treat incomplete Bitmap proof as pending, not valid.
+8. Use `getCapabilities()` / `getVersionInfo()` when following sat-latest.
+9. Treat UTXO classification and signing as security-sensitive.
+10. Pin exact inscription IDs when reproducibility matters.
