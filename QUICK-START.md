@@ -53,196 +53,172 @@ const {
 
 ## 2. Connect a wallet correctly on desktop and mobile
 
-### Desktop / wallet in-app browser
-
-If the wallet provider is already injected, the simple Loader connection remains valid:
-
-```js
-await Nexus.connectWallet('unisat');
-
-const state = Nexus.getWalletState();
-
-console.log(state.paymentAddress);
-console.log(state.ordinalsAddress);
-```
-
-In a normal mobile browser there may be **no injected provider**. For mobile-aware apps, use the Loader's named `NexusWalletConnect` export and `connectSmart()`.
-
-### Recommended mobile-aware connection helper
+Import both Loader surfaces for mobile-aware applications:
 
 ```js
 const {
   default: Nexus,
   NexusWalletConnect: NWC
 } = await import('/r/sat/534764996708771/at/-1/content');
+```
 
-const WALLET_NAME_BY_ID = Object.freeze({
-  bitmapwallet: 'BitmapWallet',
-  unisat: 'UniSat',
-  xverse: 'Xverse',
-  okx: 'OKX',
-  leather: 'Leather',
-  phantom: 'Phantom',
-  wizz: 'Wizz',
-  oyl: 'Oyl'
+### Desktop / wallet in-app browser
+
+If the provider is already injected, the normal connection remains valid:
+
+```js
+await Nexus.connectWallet('unisat');
+
+const state = Nexus.getWalletState();
+console.log(state.paymentAddress);
+console.log(state.ordinalsAddress);
+```
+
+This does not describe UniSat in a normal phone browser with no injected `window.unisat` provider.
+
+### Xverse and Phantom
+
+Xverse and Phantom can open the current dApp in their in-app browser:
+
+```js
+const result = await NWC.connectSmart('Xverse', {
+  targetUrl: location.href
 });
 
-async function connectWallet(walletId) {
-  const id = String(walletId || '').trim().toLowerCase();
-  const walletName = WALLET_NAME_BY_ID[id];
-  if (!walletName) throw new Error(`Unsupported wallet: ${walletId}`);
+if (result?.redirected) return;
+```
 
-  let result;
+Use the same pattern for Phantom. After a redirect, stop work in the old browser context and allow the dApp to reload inside the wallet browser.
 
-  if (typeof NWC?.connectSmart === 'function') {
-    result = await NWC.connectSmart(walletName, {
-      targetUrl: location.href
-    });
+### UniSat normal mobile browser
 
-    if (result?.redirected) {
-      // The wallet app is opening/reloading the dApp.
-      // Do not continue into state, inventory, UTXO or signing calls here.
-      if (result.deepLink && location.href !== result.deepLink) {
-        location.href = result.deepLink;
-      }
-      return { redirected: true, result };
-    }
-  } else if (typeof NWC?.connect === 'function') {
-    result = await NWC.connect(walletName);
-  } else {
-    result = await Nexus.connectWallet(id);
+The known-working integration does **not** use `openDapp` as the UniSat connection handshake. Use the method-level UniSat RPC bridge directly from the user's tap:
+
+```text
+unisat://request?method=connect&from=NexusWallet&nonce=<nonce>
+```
+
+If `connect` is unavailable, retry with a new nonce using:
+
+```text
+unisat://request?method=requestAccounts&from=NexusWallet&nonce=<new-nonce>
+```
+
+Minimal request builder:
+
+```js
+function nonce() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('') +
+    '-' + Date.now().toString(16);
+}
+
+function encodeBase64Json(value) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function buildUniSatRequest(method, params = null) {
+  const requestNonce = nonce();
+  let url =
+    `unisat://request?method=${encodeURIComponent(method)}` +
+    `&from=${encodeURIComponent('NexusWallet')}` +
+    `&nonce=${encodeURIComponent(requestNonce)}`;
+
+  if (params !== null) {
+    url += `&data=${encodeURIComponent(encodeBase64Json(params))}`;
   }
 
-  // Keep the Loader wallet state in sync because inscription and marketplace
-  // methods use Nexus wallet state.
-  const loaderState = Nexus?.getWalletState?.();
-  if (
-    typeof Nexus?.connectWallet === 'function' &&
-    !(loaderState?.isConnected || loaderState?.connected)
-  ) {
-    await Nexus.connectWallet(id);
-  }
+  return { url, nonce: requestNonce };
+}
+```
 
-  const state =
-    NWC?.getState?.() ||
-    NWC?.getWalletState?.() ||
-    Nexus?.getWalletState?.() ||
-    {};
+Launch it directly from the user's click/tap:
 
-  const provider = NWC?.getCurrentProvider?.();
+```js
+const request = buildUniSatRequest('connect');
+sessionStorage.setItem('nexus_unisat_pending_nonce', request.nonce);
+window.location.href = request.url;
+```
+
+Do not place an unrelated awaited network request or import between the user's tap and `window.location.href`.
+
+A response may look like:
+
+```text
+unisat://response?data=<base64-json>&nonce=<nonce>
+```
+
+Accept response data only after the returned nonce exactly matches the pending request.
+
+### UniSat signing
+
+Use the same bridge for signing:
+
+```js
+buildUniSatRequest('signPsbt', [psbtHex, options]);
+buildUniSatRequest('signPsbts', [psbtHexArray, optionsArray]);
+buildUniSatRequest('signMessage', [message, type]);
+```
+
+A production mobile bridge should keep pending requests keyed by nonce, re-check responses when focus/visibility returns, inspect query/hash response data, validate the nonce before decoding `data`, update provider/state only after a valid response, and provide a manual `submitUniSatMobileResponse(text)` fallback when UniSat displays a response URI instead of returning it automatically.
+
+### Recommended connection split
+
+```js
+async function connectWallet(walletName) {
+  // UniSat normal mobile browser:
+  // use the RPC bridge above when window.unisat is not injected.
+
+  // Xverse / Phantom / injected providers:
+  const result = await NWC.connectSmart(walletName, {
+    targetUrl: location.href
+  });
+
+  if (result?.redirected) return result;
+
+  const state = NWC.getState?.();
+  const provider = NWC.getCurrentProvider?.();
 
   if (!(state?.isConnected || state?.connected) || !provider) {
-    throw new Error(
-      'Wallet connected, but Nexus WalletConnect did not retain the active provider.'
-    );
+    throw new Error('Wallet connection did not retain a provider');
   }
 
-  return { redirected: false, result, state, provider };
+  return { redirected: false, state, provider };
 }
 ```
 
-Call it from the user's direct click/tap:
+Do **not** document UniSat `openDapp` as equivalent to this proven method-level connection bridge.
 
-```js
-const connected = await connectWallet('unisat');
+### Loader / SDK synchronisation
 
-if (connected?.redirected) {
-  // Stop here. The wallet app is opening.
-  return;
-}
-
-// Safe to continue only after a real in-page connection exists.
-const state = NWC.getState();
-const inventory = await NWC.getAllInscriptions();
-```
-
-`connectSmart()` handles these environments:
-
-```text
-desktop with injected provider
-wallet in-app browser
-normal mobile browser -> provider attempt -> configured wallet deep link
-```
-
-If it returns `{ redirected: true }`, treat that as a terminal result for the current browser context.
-
-### Auto-reconnect after the wallet app opens the dApp
-
-Run this early after importing the Loader:
-
-```js
-try {
-  await NexusWalletConnect.tryMobileAutoReconnect?.();
-} catch {}
-```
-
-Then check state:
-
-```js
-const state =
-  NexusWalletConnect.getState?.() ||
-  Nexus.getWalletState?.();
-
-if (state?.isConnected || state?.connected) {
-  console.log('Connected:', state.walletType, state.ordinalsAddress);
-}
-```
-
-Keep the wallet picker available even if auto-reconnect does not restore the pending context.
-
-### Mobile wallet picker
-
-```js
-const installed =
-  NexusWalletConnect.detectWallets?.() || [];
-
-const mobile =
-  NexusWalletConnect.listMobileWalletOptions?.({
-    targetUrl: location.href
-  }) || [];
-```
-
-Do **not** hide wallet choices because `detectWallets()` is empty on a phone. A normal mobile browser commonly has no injected provider.
-
-Current conservative built-in mobile open-URL defaults are documented for:
-
-```text
-UniSat
-Xverse
-Phantom
-```
-
-Current behavior:
-
-- **Xverse**: universal link opens the dApp URL in the Xverse browser;
-- **Phantom**: universal link opens the dApp URL in the Phantom browser;
-- **UniSat**: `unisat://request?...openDapp...` opens the requested dApp URL;
-- **OKX**: no default mobile deep link is shipped because behavior has varied across versions. Add an override only after testing the target platform.
-
-Runtime override example:
-
-```js
-window.NEXUS_MOBILE_WALLET_DEEPLINKS = {
-  OKX: (targetUrl) =>
-    `okx://wallet/dapp/url?dappUrl=${encodeURIComponent(targetUrl)}`
-};
-
-window.NEXUS_MOBILE_WALLET_ALLOWED_SCHEMES = {
-  OKX: ['okx', 'https']
-};
-```
-
-Only configure deep links that you have verified for the wallet/platform version you support.
+For inscriptions, buying, listing and other PSBT flows, the SDK must retain the provider associated with the validated wallet connection. A UI-only address is not a complete connection.
 
 ### Mobile security rules
 
-- pass an `http:` or `https:` dApp URL as `targetUrl`;
-- prefer `connectSmart()` over hand-built wallet links;
-- never build `javascript:`, `data:` or other executable deep links;
-- never treat `{ redirected: true }` as a connected wallet;
-- do not query inventory, UTXOs, ownership or signing immediately after a redirect result;
-- keep wallet/deep-link opening in the user's direct click/tap path;
-- do not display ownership from stale inventory without current on-chain validation.
+- generate nonces with `crypto.getRandomValues()` where available;
+- store only minimum pending metadata in `sessionStorage`;
+- require an exact nonce match before accepting response data;
+- never accept `javascript:` or `data:` wallet links;
+- keep wallet launch/navigation in the direct user gesture;
+- never continue signing or transaction construction while connection is pending/redirected;
+- treat wallet inventory as discovery only and validate current ownership on-chain before authorising an asset action.
+
+### Wallet discovery
+
+Do not hide wallet choices merely because a standard phone browser has no injected providers:
+
+```js
+const installed = NWC.detectWallets?.() || [];
+const mobile = NWC.listMobileWalletOptions?.({
+  targetUrl: location.href
+}) || [];
+```
+
+These are discovery helpers. They do not mean every wallet uses the same transport.
 
 ### Documented wallet IDs
 
@@ -260,7 +236,7 @@ bitmapwallet
 ### Disconnect
 
 ```js
-await NexusWalletConnect.disconnect?.();
+await NWC.disconnect?.();
 await Nexus.disconnect?.();
 ```
 
@@ -656,10 +632,10 @@ console.log(
 
 | Method | Description |
 |---|---|
-| `connectSmart(walletName, options)` | Preferred mobile-aware/provider-aware connection |
+| `connectSmart(walletName, options)` | Provider-aware connection / wallet-browser handoff; UniSat normal-mobile RPC uses a separate bridge |
 | `connectWithStrategy(walletName, options)` | Explicit connection strategy |
 | `connect(walletName)` | Named wallet connection |
-| `tryMobileAutoReconnect()` | Restore a mobile deep-link handoff when possible |
+| `tryMobileAutoReconnect()` | Restore supported wallet-browser deep-link handoffs where applicable; not a substitute for UniSat nonce/RPC response validation |
 | `detectWallets()` | Detect injected providers |
 | `listMobileWalletOptions(options)` | Mobile wallet/deep-link choices |
 | `getState()` | WalletConnect state |
