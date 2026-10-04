@@ -75,8 +75,12 @@ External websites can explicitly choose an Ordinals-compatible origin:
 ```js
 window.__NEXUS_ORDINALS_ORIGIN__ = 'https://ordinals.com';
 
-const { default: Nexus } =
-  await import('https://ordinals.com/r/sat/534764996708771/at/-1/content');
+const {
+  default: Nexus,
+  NexusWalletConnect
+} = await import(
+  'https://ordinals.com/r/sat/534764996708771/at/-1/content'
+);
 ```
 
 This is different from an on-chain inscription, where root-relative URLs are preferred.
@@ -85,14 +89,22 @@ This is different from an on-chain inscription, where root-relative URLs are pre
 
 ## Connect a wallet
 
+### Desktop / already inside a wallet browser
+
+For an injected provider, the simple Loader API remains valid:
+
 ```js
+const { default: Nexus } =
+  await import('/r/sat/534764996708771/at/-1/content');
+
 await Nexus.connectWallet('unisat');
 
 const state = Nexus.getWalletState();
-
 console.log(state.paymentAddress);
 console.log(state.ordinalsAddress);
 ```
+
+`Nexus.connectWallet()` is the simple provider connection path. In a normal mobile browser there may be **no injected wallet provider**, so mobile applications should use the named `NexusWalletConnect` export instead.
 
 Supported wallet identifiers documented by the current loader:
 
@@ -107,17 +119,282 @@ oyl
 bitmapwallet
 ```
 
-Detect installed wallets:
+### Mobile wallet apps and deep links
+
+Import both Loader surfaces:
+
+```js
+const {
+  default: Nexus,
+  NexusWalletConnect
+} = await import('/r/sat/534764996708771/at/-1/content');
+```
+
+The recommended mobile-aware method is:
+
+```js
+const result = await NexusWalletConnect.connectSmart(walletName, {
+  targetUrl: location.href
+});
+```
+
+`connectSmart()` behaves as follows:
+
+- desktop: connect through the injected provider;
+- wallet in-app browser: connect through the already injected provider;
+- normal mobile browser: try the provider first, then fall back to the wallet's configured mobile deep link;
+- on redirect it returns a result containing `redirected: true` and, when available, `deepLink`.
+
+The caller must treat a redirect as a terminal result for that browser context. **Do not continue immediately into wallet-state, inscription-inventory, UTXO or signing calls after `redirected: true`.** The wallet app is opening/reloading the dApp.
+
+### Complete Loader connection helper
+
+```js
+const {
+  default: Nexus,
+  NexusWalletConnect: NWC
+} = await import('/r/sat/534764996708771/at/-1/content');
+
+const WALLET_NAME_BY_ID = Object.freeze({
+  bitmapwallet: 'BitmapWallet',
+  unisat: 'UniSat',
+  xverse: 'Xverse',
+  okx: 'OKX',
+  leather: 'Leather',
+  phantom: 'Phantom',
+  wizz: 'Wizz',
+  oyl: 'Oyl'
+});
+
+async function connectWallet(walletId) {
+  const id = String(walletId || '').trim().toLowerCase();
+  const walletName = WALLET_NAME_BY_ID[id];
+  if (!walletName) throw new Error(`Unsupported wallet: ${walletId}`);
+
+  const targetUrl = location.href;
+  let result;
+
+  if (typeof NWC?.connectSmart === 'function') {
+    result = await NWC.connectSmart(walletName, { targetUrl });
+
+    if (result?.redirected) {
+      // connectSmart/openMobileWallet normally performs this navigation itself.
+      // Keeping the assignment is a safe compatibility fallback for loader revisions
+      // that return the deep link without navigating.
+      if (result.deepLink && location.href !== result.deepLink) {
+        location.href = result.deepLink;
+      }
+      return { redirected: true, result };
+    }
+  } else if (typeof NWC?.connect === 'function') {
+    result = await NWC.connect(walletName);
+  } else if (typeof Nexus?.connectWallet === 'function') {
+    result = await Nexus.connectWallet(id);
+  } else {
+    throw new Error('No Nexus wallet connection method is available');
+  }
+
+  // WalletConnect owns the live provider. Keep the Loader instance in sync as
+  // well because createInscription/marketplace methods use the Loader wallet state.
+  const loaderState = Nexus?.getWalletState?.();
+  if (
+    typeof Nexus?.connectWallet === 'function' &&
+    !(loaderState?.isConnected === true || loaderState?.connected === true)
+  ) {
+    await Nexus.connectWallet(id);
+  }
+
+  const state =
+    NWC?.getState?.() ||
+    NWC?.getWalletState?.() ||
+    Nexus?.getWalletState?.() ||
+    {};
+
+  const provider = NWC?.getCurrentProvider?.();
+
+  if (!(state?.isConnected || state?.connected) || !provider) {
+    throw new Error(
+      'Wallet connected, but Nexus WalletConnect did not retain the active provider.'
+    );
+  }
+
+  return { redirected: false, result, state, provider };
+}
+```
+
+### Correct React / UI calling pattern
+
+The caller must stop when a mobile redirect begins:
+
+```js
+const connected = await connectWallet(walletChoice);
+
+if (connected?.redirected) {
+  setWalletStatus(`Opening ${walletName(walletChoice)} app…`);
+  return;
+}
+
+// Only run these after a real in-page connection exists.
+const state = NWC.getState();
+const inventory = await NWC.getAllInscriptions();
+```
+
+This early return is important. Starting `getState()`, `getAllInscriptions()`, UTXO discovery or profile validation in the original browser while the deep link is navigating can produce a false connection error even though the wallet app is opening correctly.
+
+### Auto-reconnect after a mobile redirect
+
+Call this early after importing the Loader:
+
+```js
+try {
+  await NexusWalletConnect.tryMobileAutoReconnect?.();
+} catch {}
+```
+
+Then read state normally:
+
+```js
+const state =
+  NexusWalletConnect.getState?.() ||
+  Nexus.getWalletState?.();
+
+if (state?.isConnected || state?.connected) {
+  console.log('Connected:', state.walletType, state.ordinalsAddress);
+}
+```
+
+Do not make the application depend solely on auto-reconnect. The connection UI should still allow the user to choose the wallet again if the wallet browser does not restore the pending redirect context.
+
+### Mobile wallet picker
+
+The Loader re-exports the wallet-connect helpers through `NexusWalletConnect`:
+
+```js
+const {
+  NexusWalletConnect: NWC
+} = await import('/r/sat/534764996708771/at/-1/content');
+
+const installed = NWC.detectWallets?.() || [];
+const mobile = NWC.listMobileWalletOptions?.({
+  targetUrl: location.href
+}) || [];
+```
+
+The current wallet-connect module ships conservative mobile open-URL defaults for:
+
+```text
+UniSat
+Xverse
+Phantom
+```
+
+The current behavior is:
+
+- **Xverse**: universal link opens the dApp URL in the Xverse browser;
+- **Phantom**: universal link opens the dApp URL in the Phantom browser;
+- **UniSat**: `unisat://request?...openDapp...` bridge opens the requested dApp URL;
+- **OKX**: no default mobile deep link is shipped because behavior has varied across versions; configure it explicitly only after testing the target platform;
+- other supported wallets can still connect when they inject a provider, or when an application supplies a tested custom deep-link configuration.
+
+Do not hide all wallet choices simply because `detectWallets()` is empty on a phone. An empty injected-provider list is normal in a standard mobile browser.
+
+### Custom mobile deep links
+
+Runtime overrides are supported:
+
+```js
+window.NEXUS_MOBILE_WALLET_DEEPLINKS = {
+  OKX: (targetUrl) =>
+    `okx://wallet/dapp/url?dappUrl=${encodeURIComponent(targetUrl)}`
+};
+
+window.NEXUS_MOBILE_WALLET_ALLOWED_SCHEMES = {
+  OKX: ['okx', 'https']
+};
+```
+
+Or use the wallet-connect helper when available:
+
+```js
+NexusWalletConnect.setMobileWalletDeepLinks?.({
+  OKX: (targetUrl) =>
+    `okx://wallet/dapp/url?dappUrl=${encodeURIComponent(targetUrl)}`
+});
+```
+
+Only configure links that have actually been verified for the wallet/platform version you support.
+
+### Mobile wallet security requirements
+
+The mobile wallet module validates the dApp target URL and generated wallet link. Applications should preserve those protections:
+
+- pass an `http:` or `https:` dApp URL as `targetUrl`;
+- do not build `javascript:`, `data:` or other executable deep links;
+- prefer `connectSmart()` over hand-assembling wallet links;
+- do not treat `{ redirected: true }` as a connected wallet;
+- do not show ownership from stale wallet inventory before current on-chain ownership validation;
+- keep wallet connection and deep-link navigation in the user's direct click/tap path.
+
+### Relevant named WalletConnect methods
+
+```text
+connectSmart(walletName, options)
+connectWithStrategy(walletName, options)
+connect(walletName)
+tryMobileAutoReconnect()
+detectWallets()
+listMobileWalletOptions(options)
+probeConnectionMethods(walletName, options)
+probeAllWallets()
+getState()
+getCurrentProvider()
+getAllInscriptions()
+getInscriptions(offset, limit)
+disconnect()
+```
+
+For normal mobile dApps, `connectSmart()` is the preferred entry point.
+
+### Loader import reference
+
+```text
+Nexus Loader      /r/sat/534764996708771/at/-1/content
+WalletConnect     /r/sat/534764996703784/at/-1/content
+```
+
+The Loader exposes WalletConnect as the named export:
+
+```js
+const {
+  default: Nexus,
+  NexusWalletConnect
+} = await import('/r/sat/534764996708771/at/-1/content');
+```
+
+### Detect installed providers
+
+For desktop or wallet-browser provider detection:
 
 ```js
 const installed = Nexus.getInstalledWallets();
 console.log(installed);
 ```
 
-Disconnect:
+On a normal mobile browser, an empty injected-provider list is expected and must not be used to hide wallets that can be opened through mobile deep links.
+
+### Disconnect
+
+Simple Loader disconnect:
 
 ```js
 await Nexus.disconnect();
+```
+
+If your app is using the named WalletConnect surface directly, disconnect that surface as well when available:
+
+```js
+await NexusWalletConnect.disconnect?.();
+await Nexus.disconnect?.();
 ```
 
 ### Wallet-provider injection caveat
@@ -396,6 +673,8 @@ const result = await Nexus.createInscriptionTree({
 
 console.log(result);
 ```
+
+If the application can run in a normal mobile browser, complete the mobile-aware connection flow above before calling tree/chain or signing methods.
 
 Runtime capability/version detection:
 
@@ -974,12 +1253,14 @@ console.log(
 
 ## Method reference
 
+### Nexus Loader
+
 | Method | Description |
 |---|---|
-| `connectWallet(type)` | Connect wallet |
-| `disconnect()` | Disconnect wallet |
-| `getWalletState()` | Current wallet state |
-| `getInstalledWallets()` | Detected wallet extensions |
+| `connectWallet(type)` | Connect through an injected wallet provider |
+| `disconnect()` | Disconnect Loader wallet state |
+| `getWalletState()` | Current Loader wallet state |
+| `getInstalledWallets()` | Detected injected wallet extensions/providers |
 | `createInscription(config)` | Create inscription(s) |
 | `createInscriptionTree(opts)` | Tree/DAG orchestration |
 | `createInscriptionChain(opts)` | Chain orchestration |
@@ -1000,9 +1281,29 @@ console.log(
 | `loadCollectionsRegistry()` | Load collection registry |
 | `matchCollectionForInscription(id)` | Match inscription to collection |
 
+### `NexusWalletConnect`
+
+| Method | Description |
+|---|---|
+| `connectSmart(walletName, options)` | Preferred mobile-aware/provider-aware connection entry point |
+| `connectWithStrategy(walletName, options)` | Connect using an explicit WalletConnect strategy |
+| `connect(walletName)` | Connect by named wallet/provider |
+| `tryMobileAutoReconnect()` | Attempt to restore a connection after a mobile deep-link handoff |
+| `detectWallets()` | Detect injected providers |
+| `listMobileWalletOptions(options)` | Return mobile wallet choices/deep-link options |
+| `probeConnectionMethods(walletName, options)` | Probe methods for one wallet |
+| `probeAllWallets()` | Probe supported wallets |
+| `getState()` | Current WalletConnect state |
+| `getCurrentProvider()` | Current retained provider |
+| `getAllInscriptions()` | Wallet inscription inventory |
+| `getInscriptions(offset, limit)` | Paginated wallet inscription inventory |
+| `disconnect()` | Disconnect WalletConnect state |
+
 ---
 
 ## Minimal full example
+
+This example is mobile-aware. It uses `connectSmart()` first, stops immediately when a mobile redirect begins, and synchronises the Loader state before inscription methods are enabled.
 
 ```html
 <!doctype html>
@@ -1016,42 +1317,76 @@ console.log(
   <title>Nexus Demo</title>
 </head>
 <body>
-  <button id="connect">Connect Wallet</button>
+  <button id="connect">Connect UniSat</button>
   <button id="inscribe" disabled>Inscribe</button>
   <pre id="out">Loading Nexus…</pre>
 
   <script type="module">
-    const { default: Nexus } =
-      await import(
-        '/r/sat/534764996708771/at/-1/content'
-      );
+    const {
+      default: Nexus,
+      NexusWalletConnect: NWC
+    } = await import(
+      '/r/sat/534764996708771/at/-1/content'
+    );
 
-    const out =
-      document.getElementById('out');
+    const out = document.getElementById('out');
+    const connect = document.getElementById('connect');
+    const inscribe = document.getElementById('inscribe');
 
-    const connect =
-      document.getElementById('connect');
+    out.textContent = 'Ready. Connect a wallet.';
 
-    const inscribe =
-      document.getElementById('inscribe');
-
-    out.textContent =
-      'Ready. Connect a wallet.';
+    // If this page has just been opened inside a wallet app, try to restore
+    // the pending mobile handoff. The connect button remains available if
+    // the wallet/browser does not restore the context automatically.
+    try {
+      await NWC?.tryMobileAutoReconnect?.();
+    } catch {}
 
     connect.onclick = async () => {
       try {
-        await Nexus.connectWallet('unisat');
+        let result;
+
+        if (typeof NWC?.connectSmart === 'function') {
+          result = await NWC.connectSmart('UniSat', {
+            targetUrl: location.href
+          });
+
+          if (result?.redirected) {
+            out.textContent = 'Opening UniSat app…';
+
+            if (result.deepLink && location.href !== result.deepLink) {
+              location.href = result.deepLink;
+            }
+
+            return;
+          }
+        } else {
+          await Nexus.connectWallet('unisat');
+        }
+
+        const loaderState = Nexus?.getWalletState?.();
+        if (
+          typeof Nexus?.connectWallet === 'function' &&
+          !(loaderState?.isConnected || loaderState?.connected)
+        ) {
+          await Nexus.connectWallet('unisat');
+        }
 
         const state =
-          Nexus.getWalletState();
+          NWC?.getState?.() ||
+          Nexus?.getWalletState?.() ||
+          {};
+
+        if (!(state?.isConnected || state?.connected)) {
+          throw new Error('Wallet connection was not retained');
+        }
 
         out.textContent =
-          `Connected: ${state.ordinalsAddress}`;
+          `Connected: ${state.ordinalsAddress || ''}`;
 
         inscribe.disabled = false;
       } catch (error) {
-        out.textContent =
-          `Error: ${error.message}`;
+        out.textContent = `Error: ${error.message}`;
       }
     };
 
@@ -1062,19 +1397,15 @@ console.log(
             feeRate: 10,
             items: [
               {
-                content:
-                  'Hello from Nexus!',
-                contentType:
-                  'text/plain;charset=utf-8'
+                content: 'Hello from Nexus!',
+                contentType: 'text/plain;charset=utf-8'
               }
             ]
           });
 
-        out.textContent =
-          JSON.stringify(result, null, 2);
+        out.textContent = JSON.stringify(result, null, 2);
       } catch (error) {
-        out.textContent =
-          `Error: ${error.message}`;
+        out.textContent = `Error: ${error.message}`;
       }
     };
   </script>
@@ -1120,3 +1451,5 @@ The current repository documents:
 8. Use `getCapabilities()` / `getVersionInfo()` when following sat-latest.
 9. Treat UTXO classification and signing as security-sensitive.
 10. Pin exact inscription IDs when reproducibility matters.
+11. Use `NexusWalletConnect.connectSmart()` for mobile-aware wallet entry and stop immediately on `{ redirected: true }`.
+12. Do not hide mobile wallet choices only because no injected provider is detected.
