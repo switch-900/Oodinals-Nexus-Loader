@@ -141,6 +141,36 @@ The actual loader source is maintained under `switch-900/nexus-inscriber/sdk/nex
 
 Do not invent an on-chain `/content/<relay ID>` path before that relay module has been inscribed.
 
+## Esplora pagination for registries and name services
+
+**Important:** the standard `NexusRelay.request('address-txs', {address,network})` action fetches Esplora's first address-history page. It can return up to **25 confirmed** transactions and should **not** be treated as complete when an address has more activity. The Oodinals marketplace's `frontend/sdk/marketplace.js` implements the established Esplora cursor scheme: `/address/<address>/txs/chain/<lastTxid>` (the ID at the end of the previous confirmed page).
+
+The existing Lumamesh Pion/WebRTC Bitcoin relay source (`switch-900/lumamesh/pion-server/bitcoin.go`) exposes a read-only `btc-get` action for allowlisted upstream domains. **That support is present in the source; it has not yet been individually tested against the currently deployed relay using the 0NS frontend.** It allows a caller to request Esplora's address summary and older confirmed pages through the existing WebRTC DataChannel, without a popup and without direct external fetch from the inscription:
+
+```js
+const address = 'bc1p0jhh0smr9u76xkly8ch343yu2fcgrp4xszzz3qte25v7sq0txqzssd32f5';
+const relay = window.NexusRelay;
+
+// Public, read-only Bitcoin data. No signing, no wallet or popup.
+const stats = await relay.request('btc-get', {
+  url: `https://blockstream.info/api/address/${address}`,
+}, 20000);
+
+const first = await relay.request('address-txs', {address,network:'mainnet'}, 20000);
+const confirmed = first.filter(tx => tx.status?.confirmed === true);
+if (confirmed.length && confirmed.length < stats.chain_stats.tx_count) {
+  const lastTxid = confirmed.at(-1).txid;
+  const older = await relay.request('btc-get', {
+    url: `https://blockstream.info/api/address/${address}/txs/chain/${lastTxid}`,
+  }, 20000);
+  // Continue with older page cursors; validate against stats and detect loops.
+}
+```
+
+For a **first-registration-wins** namespace (0NS), the consumer must compare the full confirmed count, reject duplicate or missing older pages, verify mempool status, and **fail closed** if any page or `btc-get` action fails. The OODL marketplace may display a recent-listings page even when older pages are unavailable, but doing so cannot safely establish namespace availability.
+
+The current 0NS branch `sdk-hardening-20261009` includes these checks and exposes `client.historyStatus()`. Its HTML **Settings → Test WebRTC + index** tests this transport against the actual deployed relay before inscription. No Nexus Loader re-inscription is needed merely to add these consumer-side pagination calls, provided the deployed `btc-get` relay action succeeds.
+
 ## Current popup behaviour
 
 A live read-only `NexusRelay.request('address-txs')` has returned three transactions in an Ordinals-host browser session. The older compatibility `openPopup` call **may** complete without a visible popup when Nexus Core has WebRTC enabled, but can fall through to a channel/popup. The direct `NexusRelay.request` path avoids that popup code. To prove this API is created by the on-chain Loader itself, repeat the probe in a fresh page and compare availability **before and after** the import.
