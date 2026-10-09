@@ -10,7 +10,7 @@ const { default: Nexus } = await import('/r/sat/534764996708771/at/-1/content');
 
 No npm. No build step. No package manager.
 
-**Bitcoin data over WebRTC:** A live Ordinals-host browser test on 9 October 2026 successfully used `NexusRelay.request('address-txs', ...)` to retrieve **3 transactions** without calling the popup proxy. The newer Nexus frontend implements this WebRTC interface, and 0NS now prefers it. A fresh-page before/after check is still needed to prove the *Loader itself* publishes the relay rather than another page script. See [WebRTC transport and provenance checks](WEBRTC-DATA-TRANSPORT.md) and the [read-only browser probe](examples/nexus-webrtc-probe.html).
+**WebRTC address-history access verified:** On 9 October 2026, a clean Ordinals-host browser session had neither `NexusRelay.request` nor `NexusBitcoinProxy.openPopup` before importing the on-chain Loader. After the Loader import succeeded, both were available. A separate live WebRTC `address-txs` request retrieved **3 transactions** without calling the popup API. The Loader already makes WebRTC available; **no reinscription is needed for this capability**. Apps such as 0NS can prefer `NexusRelay.request` and reserve the proxy for compatibility. See [WebRTC transport](WEBRTC-DATA-TRANSPORT.md) and the [browser probe](examples/nexus-webrtc-probe.html).
 
 ---
 
@@ -662,7 +662,7 @@ minimum
 
 The newer `nexus-inscriber` frontend prefers a WebRTC DataChannel relay for supported Bitcoin-data actions such as `address-txs` and `address-txs-mempool`. When that frontend publishes `window.NexusRelay.request`, callers can request public blockchain data without invoking a popup. See [WebRTC data transport](WEBRTC-DATA-TRANSPORT.md).
 
-**Live session confirmed:** `NexusRelay.request` worked after the on-chain Loader import, returning three transactions. **Loader ownership of that global is not independently verified:** another page script could have exposed the relay before import. The Loader initialises `NexusCore.initBitcoinProxy()`; the proxy may attempt WebRTC internally, or fall through to a channel/visible popup. Use the [fresh-page provenance test](WEBRTC-DATA-TRANSPORT.md#clean-context-provenance-check) before calling this a guaranteed Loader API.
+**Live Loader integration confirmed:** In the clean-context test, `NexusRelay.request` and the compatibility proxy were both absent before importing the on-chain Loader and available afterward. The Loader (or its imported dependencies) exposes the WebRTC API to consumers. `NexusBitcoinProxy.openPopup` remains a fallback and can still fall through to a visible popup if WebRTC fails. See the [transport checks](WEBRTC-DATA-TRANSPORT.md#clean-context-provenance-check) for reproducible verification.
 
 For any actual popup fallback, keep browser user-gesture restrictions in mind. Do not assume several unrelated popup-requiring operations can be triggered later from one stale click event. Never treat an unavailable history transport as proof that a name or UTXO is absent.
 
