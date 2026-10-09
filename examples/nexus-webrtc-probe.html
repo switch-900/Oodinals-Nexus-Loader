@@ -40,6 +40,9 @@ inspect.addEventListener('click',async()=>{
   output.textContent='';
   log('Importing Nexus Loader from '+LOADER);
   try{
+    const beforeRelay=typeof globalThis.NexusRelay?.request==='function';
+    const beforeProxy=typeof globalThis.NexusBitcoinProxy?.openPopup==='function';
+    log('Before import — relay: '+bool(beforeRelay)+', proxy: '+bool(beforeProxy));
     const module=await import(LOADER);
     const sdk=module.default||module.Nexus;
     loaded=!!sdk;
@@ -51,6 +54,11 @@ inspect.addEventListener('click',async()=>{
     log('NexusRelay.isAvailable: '+String(relay?.isAvailable?.()??'not exposed'));
     log('Relay kill switch enabled: '+bool(globalThis.__NEXUS_DISABLE_RELAY__===true));
     log('Compatibility NexusBitcoinProxy: '+bool(typeof proxy?.openPopup==='function'));
+    if(!beforeRelay && typeof relay?.request==='function') {
+      log('PROVENANCE PASS: importing Nexus made the relay API available on this page.');
+    } else if(beforeRelay) {
+      log('PROVENANCE UNCERTAIN: NexusRelay was already exposed BEFORE importing the Loader.');
+    }
     if(typeof relay?.request!=='function'){
       log('NOT EXPOSED. This Loader does not publish the relay API. Importing the newer Nexus frontend is not proof this on-chain Loader has it.');
       log('The compatibility proxy might itself use WebRTC internally; this probe deliberately avoids opening it.');
