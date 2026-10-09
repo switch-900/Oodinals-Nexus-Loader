@@ -1,6 +1,6 @@
 # Nexus WebRTC address-history transport
 
-**Status (9 October 2026):** WebRTC is implemented in the `switch-900/nexus-inscriber` frontend, but has **not yet been verified in the currently inscribed Nexus Loader/Core**. The on-chain Loader's source initialises `NexusCore.initBitcoinProxy()`; it does not explicitly publish `window.NexusRelay`. Do not imply that this browser API works inside every inscription until the runtime probe below passes.
+**Live observation (9 October 2026):** In the user's Ordinals-host browser session, importing `/r/sat/534764996708771/at/-1/content` was followed by `RTCPeerConnection === true`, `window.NexusRelay.request === true`, `window.NexusBitcoinProxy.openPopup === true`, and a successful direct `NexusRelay.request('address-txs', ...)` returning **3 transactions**. This confirms that WebRTC Bitcoin history was usable **in that session** without the test calling the popup API. It does **not yet independently prove** that the Loader created `window.NexusRelay`: a previously loaded app script may have published it. A fresh-page before/after check remains useful. No Nexus Loader reinscription is needed solely on the basis of this successful test.
 
 ## Why WebRTC first
 
@@ -41,6 +41,35 @@ done
 ```
 
 This audits the **deployed source bytes**, but string matches alone are not proof that WebRTC actually opens or that the public `window.NexusRelay` API exists. Minified or bundled code might not retain the searched names. The runtime request below is the decisive check.
+
+## Clean-context provenance check
+
+On a **fresh** `https://ordinals.com/` browser tab (not the already-running 0NS app), open DevTools Console and run:
+
+```js
+(async () => {
+  const before = {
+    relay: typeof globalThis.NexusRelay?.request === 'function',
+    proxy: typeof globalThis.NexusBitcoinProxy?.openPopup === 'function',
+  };
+  const module = await import('/r/sat/534764996708771/at/-1/content');
+  const after = {
+    loader: Boolean(module.default || module.Nexus),
+    relay: typeof globalThis.NexusRelay?.request === 'function',
+    proxy: typeof globalThis.NexusBitcoinProxy?.openPopup === 'function',
+  };
+  console.table({ before, after });
+  if (!before.relay && after.relay) {
+    console.log('CONFIRMED: importing Nexus made the relay API available on this page.');
+  } else if (before.relay) {
+    console.warn('Relay was present BEFORE import; provenance is ambiguous.');
+  } else {
+    console.warn('Loader did not expose NexusRelay on this page.');
+  }
+})().catch(console.error);
+```
+
+An onchain-host page with existing scripts can expose `NexusRelay` before this import; do not attribute that global to the Loader without checking its initial state.
 
 ## Verify the actual on-chain Loader (read-only, no popup requested)
 
@@ -114,4 +143,4 @@ Do not invent an on-chain `/content/<relay ID>` path before that relay module ha
 
 ## Current popup behaviour
 
-The existing Loader README popup caveat remains accurate until the live probe proves WebRTC public access. A compatibility `openPopup` call **may** complete without a visible popup when its Core has WebRTC enabled, but it can fall through to a channel/popup. The direct `NexusRelay.request` path avoids that popup code entirely.
+A live read-only `NexusRelay.request('address-txs')` has returned three transactions in an Ordinals-host browser session. The older compatibility `openPopup` call **may** complete without a visible popup when Nexus Core has WebRTC enabled, but can fall through to a channel/popup. The direct `NexusRelay.request` path avoids that popup code. To prove this API is created by the on-chain Loader itself, repeat the probe in a fresh page and compare availability **before and after** the import.
