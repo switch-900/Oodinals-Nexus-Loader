@@ -15,6 +15,33 @@ The supported actions relevant to 0NS are **`address-txs`** (confirmed) and **`a
 
 The relay server itself obtains upstream blockchain data. **This is not direct node access or consensus verification**; a transport change does not establish global name uniqueness or trust in the response.
 
+## Quick audit of the actual on-chain JavaScript (WSL)
+
+To see what is deployed **now**, rather than what is checked into the newer frontend repository, run these read-only commands from WSL:
+
+```bash
+mkdir -p /tmp/nexus-webrtc-audit
+
+curl -fLsS --retry 2 --max-time 40 \
+  'https://ordinals.com/r/sat/534764996708771/at/-1/content' \
+  -o /tmp/nexus-webrtc-audit/loader.js
+
+curl -fLsS --retry 2 --max-time 40 \
+  'https://ordinals.com/r/sat/534764996708441/at/-1/content' \
+  -o /tmp/nexus-webrtc-audit/core.js
+
+wc -c /tmp/nexus-webrtc-audit/{loader,core}.js
+sha256sum /tmp/nexus-webrtc-audit/{loader,core}.js
+
+for f in /tmp/nexus-webrtc-audit/{loader,core}.js; do
+  echo "===== $f ====="
+  grep -oE 'NexusRelay|RTCPeerConnection|relayRequest|address-txs|initBitcoinProxy|openPopup' "$f" \
+    | sort | uniq -c || true
+done
+```
+
+This audits the **deployed source bytes**, but string matches alone are not proof that WebRTC actually opens or that the public `window.NexusRelay` API exists. Minified or bundled code might not retain the searched names. The runtime request below is the decisive check.
+
 ## Verify the actual on-chain Loader (read-only, no popup requested)
 
 Open an Ord-compatible page from the host you will use for 0NS, open DevTools Console and run:
