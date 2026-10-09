@@ -10,6 +10,8 @@ const { default: Nexus } = await import('/r/sat/534764996708771/at/-1/content');
 
 No npm. No build step. No package manager.
 
+**Bitcoin data over WebRTC:** The newer Nexus frontend has a no-popup WebRTC DataChannel relay for address transaction history. Whether the *currently inscribed* Loader exports this interface is still unverified. See [WebRTC data transport and on-chain verification](WEBRTC-DATA-TRANSPORT.md), including the read-only [browser probe](examples/nexus-webrtc-probe.html). Do not rely on `window.NexusRelay` until the live Loader passes that probe.
+
 ---
 
 ## How it works
@@ -656,11 +658,13 @@ slow
 minimum
 ```
 
-### Popup/user-gesture caveat
+### WebRTC-first data access and popup fallback
 
-The current loader may use a popup/proxy flow for operations that require external data under inscription CSP/browser restrictions.
+The newer `nexus-inscriber` frontend prefers a WebRTC DataChannel relay for supported Bitcoin-data actions such as `address-txs` and `address-txs-mempool`. When that frontend publishes `window.NexusRelay.request`, callers can request public blockchain data without invoking a popup. See [WebRTC data transport](WEBRTC-DATA-TRANSPORT.md).
 
-If a method requires a popup, keep browser user-gesture restrictions in mind. Do not assume several unrelated popup-requiring actions can be triggered later from one stale click event.
+**The on-chain Loader/Core has not yet been independently verified to expose this API.** It currently initialises `NexusCore.initBitcoinProxy()`, whose behaviour depends on the Core inscription version. `NexusBitcoinProxy.openPopup` may attempt WebRTC internally, or may fall through to a channel/visible popup.
+
+For any actual popup fallback, keep browser user-gesture restrictions in mind. Do not assume several unrelated popup-requiring operations can be triggered later from one stale click event. Never treat an unavailable history transport as proof that a name or UTXO is absent.
 
 ---
 
