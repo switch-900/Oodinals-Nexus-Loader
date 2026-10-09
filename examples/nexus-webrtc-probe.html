@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nexus WebRTC · Read-only on-chain probe</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,Arial,sans-serif;background:#10141c;color:#f6f8fc}
+*{box-sizing:border-box}body{max-width:760px;margin:0 auto;padding:24px 16px}
+h1{font-size:1.55rem;margin:0 0 .5em}.sub{color:#aeb8ca;line-height:1.5}
+button{background:#fb9b24;border:0;border-radius:8px;padding:12px 18px;font:600 1rem system-ui;cursor:pointer}
+button:disabled{opacity:.5;cursor:default}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}
+pre{padding:16px;background:#1b2330;border:1px solid #394457;border-radius:10px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.87rem;min-height:200px}
+.ok{color:#93efbc}.bad{color:#ffb0a9}.note{color:#eac889}
+</style>
+</head>
+<body>
+<h1>Nexus WebRTC transport probe</h1>
+<p class="sub">Checks the real Nexus Loader on this Ordinals-compatible host. Read-only: no wallet connection, signing, Bitcoin broadcast or popup calls. Only the WebRTC relay path is exercised.</p>
+<div class="actions">
+<button id="inspect" type="button">1. Inspect on-chain SDK</button>
+<button id="test" type="button" disabled>2. Fetch via WebRTC</button>
+</div>
+<pre id="log" role="status" aria-live="polite">Ready. Use an Ordinals-compatible host with /r/ endpoints.</pre>
+<script type="module">
+const LOADER='/r/sat/534764996708771/at/-1/content';
+const ADDRESS='bc1p0jhh0smr9u76xkly8ch343yu2fcgrp4xszzz3qte25v7sq0txqzssd32f5';
+const inspect=document.getElementById('inspect');
+const test=document.getElementById('test');
+const output=document.getElementById('log');
+let loaded=false;
+function log(message) {
+  output.textContent+=(output.textContent?'\n':'')+String(message);
+}
+function err(error) {return String(error?.message||error);}
+function bool(value){return value?'yes':'no';}
+inspect.addEventListener('click',async()=>{
+  inspect.disabled=true;
+  output.textContent='';
+  log('Importing Nexus Loader from '+LOADER);
+  try{
+    const module=await import(LOADER);
+    const sdk=module.default||module.Nexus;
+    loaded=!!sdk;
+    const relay=globalThis.NexusRelay;
+    const proxy=globalThis.NexusBitcoinProxy;
+    log('Loader: '+bool(loaded));
+    log('RTCPeerConnection: '+bool(typeof RTCPeerConnection==='function'));
+    log('NexusRelay.request exposed: '+bool(typeof relay?.request==='function'));
+    log('NexusRelay.isAvailable: '+String(relay?.isAvailable?.()??'not exposed'));
+    log('Relay kill switch enabled: '+bool(globalThis.__NEXUS_DISABLE_RELAY__===true));
+    log('Compatibility NexusBitcoinProxy: '+bool(typeof proxy?.openPopup==='function'));
+    if(typeof relay?.request!=='function'){
+      log('NOT EXPOSED. This Loader does not publish the relay API. Importing the newer Nexus frontend is not proof this on-chain Loader has it.');
+      log('The compatibility proxy might itself use WebRTC internally; this probe deliberately avoids opening it.');
+      return;
+    }
+    log('Relay API found. Select the WebRTC fetch test.');
+    test.disabled=false;
+  }catch(e){log('LOADER FAILED: '+err(e));}
+  finally{inspect.disabled=false;}
+});
+test.addEventListener('click',async()=>{
+  if(!loaded || typeof globalThis.NexusRelay?.request!=='function'){log('ERROR: SDK relay not available.');return;}
+  test.disabled=true;
+  const start=performance.now();
+  try{
+    log('Calling address-txs over Nexus WebRTC DataChannel (read-only)…');
+    const response=await Promise.race([
+      globalThis.NexusRelay.request('address-txs',{address:ADDRESS,network:'mainnet'},20000),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('WebRTC request timed out after 20 seconds')),20000)),
+    ]);
+    if(!Array.isArray(response))throw new Error('Non-array response: '+typeof response);
+    log('WEBRTC PASS: '+response.length+' transaction(s) in '+Math.round(performance.now()-start)+' ms.');
+    if(response[0])log('First txid: '+String(response[0].txid||'(missing)'));
+    log('No popup function was invoked by this probe.');
+  }catch(e){log('WEBRTC FAIL: '+err(e));}
+  finally{test.disabled=false;}
+});
+</script>
+</body>
+</html>
