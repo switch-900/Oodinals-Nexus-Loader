@@ -23,7 +23,7 @@ From an on-chain inscription or compatible host:
 
 No npm or build step is required.
 
-For Bitcoin address history without a popup, see [WebRTC-first transport](WEBRTC-DATA-TRANSPORT.md). **A live Ordinals-host session on 9 October 2026 returned 3 transactions through `window.NexusRelay.request('address-txs', ...)` without invoking the proxy.** The [read-only probe](examples/nexus-webrtc-probe.html) now checks whether the relay appears only *after* importing the Loader; this before/after check distinguishes an actual Loader export from a relay API already installed by another page script.
+For Bitcoin address history without a popup, see [WebRTC-first transport](WEBRTC-DATA-TRANSPORT.md). **The currently inscribed Nexus Loader has been verified in a clean browser context:** `NexusRelay.request` and the compatibility proxy were absent before import and available after import. A separate live WebRTC `address-txs` request returned **3 transactions** without invoking the popup. The [read-only probe](examples/nexus-webrtc-probe.html) can repeat these checks.
 
 ### Keep on-chain URLs host-relative
 
