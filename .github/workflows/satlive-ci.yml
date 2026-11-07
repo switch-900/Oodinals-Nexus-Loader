@@ -1,0 +1,26 @@
+name: SatLive security tests
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  satlive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: node --check satlive/satlive.mjs && node --check satlive/sign-release.mjs && node --check satlive/satlive.test.mjs
+      - name: Run signed-release and adversarial tests
+        run: node --test satlive/satlive.test.mjs
