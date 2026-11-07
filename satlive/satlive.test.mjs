@@ -31,10 +31,11 @@ function makeRelease(sequence, previous, target, version, action = 'release') {
 }
 
 function simulation({ stages = 3, tamper = null, rollback = false, unrelated = false,
-  changeLatest = false, missing = false, splitPages = false, transfer = false } = {}) {
+  changeLatest = false, missing = false, splitPages = false, transfer = false,
+  rollbackToEntry = false } = {}) {
   const r1 = makeRelease(1, null, C1, '1.0.0');
   const r2 = makeRelease(2, M1, C2, '1.1.0');
-  const r3 = makeRelease(3, M2, rollback ? C1 : C3,
+  const r3 = makeRelease(3, M2, rollback ? (rollbackToEntry ? ENTRY : C1) : C3,
     rollback ? '1.0.0' : '1.2.0', rollback ? 'rollback' : 'release');
   const items = [
     [ENTRY, 'text/html', content.get(ENTRY)]
@@ -127,6 +128,15 @@ test('explicit signed rollback selects previously authorised bytes', async () =>
     { ...simulation({ rollback: true }), subtle: webcrypto.subtle, currentId: C2 });
   assert.equal(res.status, 'update', res.reason);
   assert.equal(res.content, C1);
+  assert.equal(res.release.action, 'rollback');
+});
+
+test('explicit signed rollback to the original trusted entry V1 is supported', async () => {
+  const res = await resolveSatLive(config,
+    { ...simulation({ rollback: true, rollbackToEntry: true }),
+      subtle: webcrypto.subtle, currentId: C2 });
+  assert.equal(res.status, 'update', res.reason);
+  assert.equal(res.content, ENTRY);
   assert.equal(res.release.action, 'rollback');
 });
 
