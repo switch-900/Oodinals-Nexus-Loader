@@ -10,7 +10,8 @@
  *   --out build-ordinals/satlive-release.json
  */
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, relative, isAbsolute } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { generateKeyPairSync, createHash, createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { signingPayload, SATLIVE_FORMAT } from './satlive.mjs';
 
@@ -58,8 +59,9 @@ try {
     const privPath = option(flags, 'private');
     const pubPath = option(flags, 'public');
     if (resolve(privPath) === resolve(pubPath)) fail('Public and private key paths must differ');
-    const repoDir = resolve(new URL('..', import.meta.url).pathname);
-    if (resolve(privPath).startsWith(repoDir + '/'))
+    const repoDir = resolve(fileURLToPath(new URL('..', import.meta.url)));
+    const privateRelative = relative(repoDir, resolve(privPath));
+    if (!privateRelative.startsWith('..') && !isAbsolute(privateRelative))
       fail('Private key must be stored outside this repository');
     const keys = generateKeyPairSync('ec', { namedCurve: 'P-256' });
     const pem = keys.privateKey.export({ format: 'pem', type: 'pkcs8' });
