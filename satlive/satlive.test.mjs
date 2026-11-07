@@ -124,7 +124,7 @@ test('original entry redirects only after all verified checks', async () => {
 
 test('explicit signed rollback selects previously authorised bytes', async () => {
   const res = await resolveSatLive(config,
-    { ...simulation({ rollback: true }), subtle: webcrypto.subtle, currentId: C3 });
+    { ...simulation({ rollback: true }), subtle: webcrypto.subtle, currentId: C2 });
   assert.equal(res.status, 'update', res.reason);
   assert.equal(res.content, C1);
   assert.equal(res.release.action, 'rollback');
