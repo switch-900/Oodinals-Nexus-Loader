@@ -23,4 +23,4 @@ jobs:
       - name: Syntax checks
         run: node --check satlive/satlive.mjs && node --check satlive/sign-release.mjs && node --check satlive/satlive.test.mjs
       - name: Run signed-release and adversarial tests
-        run: node --test satlive/satlive.test.mjs
+        run: node --test satlive/*.test.mjs
