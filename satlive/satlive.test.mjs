@@ -99,6 +99,17 @@ test('V1 permanent entry discovers and verifies signed V3, content hash and sat 
   assert.ok(env.requests.every(r => r.options.cache === 'no-store' && r.options.redirect === 'error'));
 });
 
+test('V1 launcher self-entry derives its own ID and redirects to signed V3', async () => {
+  const env = simulation();
+  const result = await resolveSatLive({ ...config, entry: 'self' }, {
+    fetch: env.fetch,
+    subtle: webcrypto.subtle,
+    currentId: ENTRY
+  });
+  assert.equal(result.status, 'update', result.reason);
+  assert.equal(result.content, C3);
+});
+
 test('already-loaded V3 runs without a redirect loop', async () => {
   const env = simulation();
   let started = 0, redirect = null;
