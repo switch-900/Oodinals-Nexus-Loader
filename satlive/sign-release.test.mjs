@@ -40,7 +40,7 @@ test('offline signer keygen and signed release are WebCrypto interoperable', asy
     const publicJwk = JSON.parse(readFileSync(publicFile, 'utf8'));
     assert.equal(await verifySignature(manifest, publicJwk, webcrypto.subtle), true);
     assert.equal(await verifySignature({ ...manifest, content: id('c') }, publicJwk, webcrypto.subtle), false);
-    assert.equal(cli(['sign', '--private', privateFile, '--app', 'bad',
+    assert.equal(cli(['sign', '--private', privateFile, '--app', 'bitmap-nexus',
       '--sat', '123', '--entry', id('a'), '--content', id('b'),
       '--file', htmlFile, '--version', '0.0.1', '--sequence', '1',
       '--out', manifestFile]).status, 1, 'signed manifest must not be overwritten');
