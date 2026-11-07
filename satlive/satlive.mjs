@@ -267,7 +267,7 @@ export async function resolveSatLive(config, options = {}) {
       ensure(currentId === entry, 'current code has no authorised release');
       return { status: 'current', content: entry, history };
     }
-    ensure(currentId === config.entry || history.some(item => item.content === currentId),
+    ensure(currentId === entry || history.some(item => item.content === currentId),
       'current code is not part of the authorised release history');
     return Object.freeze({
       status: selected.content === currentId ? 'current' : 'update',
