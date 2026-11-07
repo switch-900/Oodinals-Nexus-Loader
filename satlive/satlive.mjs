@@ -242,8 +242,9 @@ export async function resolveSatLive(config, options = {}) {
       if (previous && release.action === 'release')
         ensure(compareVersion(release.version, previous.version) > 0, 'unauthorised downgrade');
       if (release.action === 'rollback')
-        ensure(previous && history.some(item => item.content === release.content &&
-          item.sha256 === release.sha256), 'rollback must target previously authorised bytes');
+        ensure(previous && (release.content === entry || history.some(item =>
+          item.content === release.content && item.sha256 === release.sha256)),
+          'rollback must target previously authorised bytes');
       ensure(seen.has(release.content) && ids.indexOf(release.content) < index,
         'release content must precede manifest on the same sat');
       const contentMeta = await getMetadata(release.content);
