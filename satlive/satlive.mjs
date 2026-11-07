@@ -9,7 +9,7 @@ export const SATLIVE_FORMAT = 'satlive.release.v1';
 export const ID_RE = /^[0-9a-f]{64}i(?:0|[1-9][0-9]*)$/;
 const HEX_RE = /^[0-9a-f]{64}$/;
 const SAT_RE = /^(?:0|[1-9][0-9]*)$/;
-const APP_RE = /^[a-z][a-z0-9-]{1,63}$/;
+const APP_RE = /^[a-z0-9][a-z0-9-]{1,63}$/;
 const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const MAX_MANIFEST_BYTES = 8192;
 const SIGNED_KEYS = new Set([
@@ -133,7 +133,7 @@ function http(fetcher, timeoutMs) {
 }
 
 function compareVersion(a, b) {
-  const x = a.split('.').map(Number), y = b.split('.').map(Number);
+  const x = a.split('.').map(BigInt), y = b.split('.').map(BigInt);
   for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i] ? 1 : -1;
   return 0;
 }
@@ -144,7 +144,7 @@ function configCheck(config) {
   ensure(config && typeof config === 'object', 'missing configuration');
   ensure(typeof config.app === 'string' && APP_RE.test(config.app), 'invalid configured app');
   ensure(typeof config.sat === 'string' && SAT_RE.test(config.sat), 'invalid configured sat');
-  ensure(validId(config.entry), 'invalid configured original inscription ID');
+  ensure(validId(config.entry) || config.entry === 'self', 'invalid configured original inscription ID');
   ensure(config.publicKey?.kty === 'EC' && config.publicKey?.crv === 'P-256',
     'a pinned developer public key is required');
   ensure(Number.isSafeInteger(config.loaderVersion ?? 1) && (config.loaderVersion ?? 1) > 0, 'invalid loader version');
@@ -160,8 +160,11 @@ export async function resolveSatLive(config, options = {}) {
     ensure(subtle, 'WebCrypto unavailable');
     const currentId = options.currentId || String(globalThis.location?.pathname || '').match(
       /^\/content\/([0-9a-f]{64}i(?:0|[1-9][0-9]*))$/
-    )?.[1] || config.entry;
+    )?.[1] || (config.entry === 'self' ? null : config.entry);
     ensure(validId(currentId), 'invalid current inscription ID');
+    // A launcher cannot know its own inscription ID until after it is mined.
+    // V1 uses 'self'; subsequent releases pin that discovered V1 ID.
+    const entry = config.entry === 'self' ? currentId : config.entry;
     const maxPages = config.maxPages ?? 10;
     ensure(Number.isSafeInteger(maxPages) && maxPages >= 1 && maxPages <= 30, 'invalid page limit');
     const maxContentBytes = config.maxContentBytes ?? 16 * 1024 * 1024;
@@ -189,7 +192,7 @@ export async function resolveSatLive(config, options = {}) {
     }
     ensure(ids.length > 0 && ids[ids.length - 1] === newest,
       'sat history is incomplete or inconsistent');
-    ensure(ids.includes(config.entry), 'original inscription not on configured sat');
+    ensure(ids.includes(entry), 'original inscription not on configured sat');
 
     const confirmedHeight = config.minConfirmations ?? 1;
     ensure(Number.isSafeInteger(confirmedHeight) && confirmedHeight >= 0 &&
@@ -228,7 +231,7 @@ export async function resolveSatLive(config, options = {}) {
       if (release?.format !== SATLIVE_FORMAT) continue;
       validateRelease(release);
       ensure(release.app === config.app && release.sat === config.sat &&
-        release.entry === config.entry, 'signed release identity mismatch');
+        release.entry === entry, 'signed release identity mismatch');
       ensure(await verifySignature(release, config.publicKey, subtle), 'invalid release signature');
       ensure(release.compat.min <= (config.loaderVersion ?? 1) &&
         release.compat.max >= (config.loaderVersion ?? 1), 'incompatible release loader');
@@ -260,8 +263,8 @@ export async function resolveSatLive(config, options = {}) {
     // Fail closed if a previously loaded updated inscription is no longer authorised.
     const selected = history.at(-1);
     if (!selected) {
-      ensure(currentId === config.entry, 'current code has no authorised release');
-      return { status: 'current', content: config.entry, history };
+      ensure(currentId === entry, 'current code has no authorised release');
+      return { status: 'current', content: entry, history };
     }
     ensure(currentId === config.entry || history.some(item => item.content === currentId),
       'current code is not part of the authorised release history');
